@@ -11,7 +11,6 @@ import { MultiplayerLobby } from './components/MultiplayerLobby';
 // Modals
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { LuckyWheelModal } from './components/LuckyWheelModal';
-import { GachaModal } from './components/GachaModal';
 import { WelcomeBackModal } from './components/WelcomeBackModal';
 
 // Services
@@ -61,7 +60,6 @@ export const App: React.FC = () => {
   // Modals state
   const [isDailyOpen, setIsDailyOpen] = useState(false);
   const [isWheelOpen, setIsWheelOpen] = useState(false);
-  const [isGachaOpen, setIsGachaOpen] = useState(false);
   const [isWelcomeBackOpen, setIsWelcomeBackOpen] = useState(false);
 
   // Check auth session on startup
@@ -239,7 +237,7 @@ export const App: React.FC = () => {
           />
         );
       case 'shop':
-        return <Shop onOpenGacha={() => setIsGachaOpen(true)} />;
+        return <Shop />;
       case 'achievements':
         return <Achievements />;
       case 'profile':
@@ -263,7 +261,6 @@ export const App: React.FC = () => {
           <Header
             onOpenDaily={() => setIsDailyOpen(true)}
             onOpenWheel={() => setIsWheelOpen(true)}
-            onOpenGacha={() => setIsGachaOpen(true)}
             onSwitchToLogin={() => setIsGuest(false)}
           />
         )}
@@ -281,7 +278,6 @@ export const App: React.FC = () => {
       {/* Pop-up Modals */}
       <DailyRewardModal isOpen={isDailyOpen} onClose={() => setIsDailyOpen(false)} />
       <LuckyWheelModal isOpen={isWheelOpen} onClose={() => setIsWheelOpen(false)} />
-      <GachaModal isOpen={isGachaOpen} onClose={() => setIsGachaOpen(false)} />
       <WelcomeBackModal
         isOpen={isWelcomeBackOpen}
         onClose={() => setIsWelcomeBackOpen(false)}

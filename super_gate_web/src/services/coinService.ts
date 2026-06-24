@@ -39,6 +39,7 @@ export interface MissionStatus {
 export class CoinService {
   private static listeners: ((data: CoinData) => void)[] = [];
   private static syncTimeout: any = null;
+  private static crossTabBound = false;
 
   // Local storage keys
   private static readonly KEYS = {
@@ -80,7 +81,27 @@ export class CoinService {
       localStorage.setItem(this.KEYS.gamesPlayed, JSON.stringify([]));
     }
 
+    this.bindCrossTabSync();
     this.notify();
+  }
+
+  /**
+   * Đồng bộ realtime giữa các tab: lắng nghe StorageEvent —
+   * khi tab khác update bất kỳ key nào của CoinService thì notify subscribers
+   * để UI re-render với dữ liệu mới. Chỉ bind 1 lần / lifetime.
+   */
+  private static bindCrossTabSync(): void {
+    if (this.crossTabBound) return;
+    if (typeof window === 'undefined') return;
+
+    const watchedKeys = new Set(Object.values(this.KEYS));
+    window.addEventListener('storage', (e) => {
+      // e.key === null khi localStorage.clear() được gọi
+      if (e.key === null || watchedKeys.has(e.key)) {
+        this.notify();
+      }
+    });
+    this.crossTabBound = true;
   }
 
   static subscribe(listener: (data: CoinData) => void) {

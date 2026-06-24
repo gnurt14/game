@@ -1,10 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { ShoppingBag, Zap, Shield, Gift, Sparkles } from 'lucide-react';
+import { ShoppingBag, Zap, Shield, Sparkles } from 'lucide-react';
 import { CoinService, CoinData } from '../services/coinService';
 
-interface ShopProps {
-  onOpenGacha: () => void;
-}
+interface ShopProps {}
 
 const FRAMES_CATALOG = [
   { id: 'neon_blue', name: 'Khung Neon Xanh', price: 150, color: '#00bcd4', desc: 'Viền xanh neon điện tử hiện đại' },
@@ -13,7 +11,7 @@ const FRAMES_CATALOG = [
   { id: 'gold', name: 'Khung Hoàng Kim', price: 500, color: '#f1c40f', desc: 'Viền vàng hoàng gia sang trọng tối thượng' },
 ];
 
-export const Shop: React.FC<ShopProps> = ({ onOpenGacha }) => {
+export const Shop: React.FC<ShopProps> = () => {
   const [coinData, setCoinData] = useState<CoinData>(CoinService.getData());
   const [buying, setBuying] = useState<string | null>(null);
 
@@ -133,29 +131,6 @@ export const Shop: React.FC<ShopProps> = ({ onOpenGacha }) => {
               style={{ padding: '8px 16px', fontSize: '0.85rem' }}
             >
               {buying === 'shield' ? 'Đang mua...' : `Mua Ngay (${coinData.shieldCount})`}
-            </button>
-          </div>
-        </div>
-
-        {/* Chest Gacha Card */}
-        <div className="glass" style={{ padding: '24px', display: 'flex', flexDirection: 'column', justifyItems: 'space-between', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'inline-flex', width: '42px', height: '42px', borderRadius: '10px', background: 'rgba(46, 204, 113, 0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-              <Gift color="#2ecc71" size={24} />
-            </div>
-            <h3 style={{ fontSize: '1.2rem', fontWeight: 800, color: 'white' }}>Rương Quà May Mắn</h3>
-            <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', marginTop: '8px', lineHeight: '1.4' }}>
-              Thử vận may của bạn! Mở rương tiêu tốn 100 xu để nhận lại ngẫu nhiên từ 25 xu đến 500 xu Jackpot.
-            </p>
-          </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px' }}>
-            <span style={{ fontWeight: 800, color: '#f1c40f' }}>🪙 100 xu</span>
-            <button 
-              onClick={onOpenGacha}
-              className="btn btn-primary"
-              style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-            >
-              Mở Rương
             </button>
           </div>
         </div>

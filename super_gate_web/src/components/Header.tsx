@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Coins, Flame, Zap, LogOut, Gift, LogIn } from 'lucide-react';
+import { Coins, Flame, Zap, LogOut, LogIn } from 'lucide-react';
 import { AuthService, PlayerModel } from '../services/authService';
 import { CoinService, CoinData } from '../services/coinService';
 import { HappyHourService } from '../services/happyHourService';
@@ -11,11 +11,10 @@ import { VipModal } from './VipModal';
 interface HeaderProps {
   onOpenDaily: () => void;
   onOpenWheel: () => void;
-  onOpenGacha: () => void;
   onSwitchToLogin?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpenGacha, onSwitchToLogin }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onSwitchToLogin }) => {
   const [player, setPlayer] = useState<PlayerModel | null>(AuthService.getPlayer());
   const [coinData, setCoinData] = useState<CoinData>(CoinService.getData());
   const [boosterTimeStr, setBoosterTimeStr] = useState<string>('');
@@ -266,20 +265,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
               </div>
             )}
 
-            {/* Daily Chest Gacha Shortcut */}
-            <button 
-              onClick={onOpenGacha}
-              className="btn btn-secondary" 
-              style={{ padding: '6px 12px', borderRadius: '10px', height: '36px', fontSize: '0.85rem' }}
-            >
-              <Gift size={16} color="#00bcd4" />
-              <span>Rương {coinData.freeLuckyBoxes > 0 ? `(${coinData.freeLuckyBoxes})` : ''}</span>
-            </button>
-
             {/* Daily Wheel Shortcut */}
-            <button 
+            <button
               onClick={onOpenWheel}
-              className="btn btn-secondary" 
+              className="btn btn-secondary"
               style={{ padding: '6px 12px', borderRadius: '10px', height: '36px', fontSize: '0.85rem' }}
             >
               <span>🎡 Vòng Quay</span>
@@ -342,16 +331,6 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
               <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#ff6b35' }}>{coinData.streakDay} ngày</span>
             </div>
 
-            {/* Daily Chest */}
-            <button
-              onClick={onOpenGacha}
-              className="btn btn-secondary"
-              style={{ padding: '6px 12px', borderRadius: '10px', height: '36px', fontSize: '0.85rem' }}
-            >
-              <Gift size={16} color="#00bcd4" />
-              <span>Rương {coinData.freeLuckyBoxes > 0 ? `(${coinData.freeLuckyBoxes})` : ''}</span>
-            </button>
-
             {/* Daily Wheel */}
             <button
               onClick={onOpenWheel}
@@ -361,7 +340,13 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
               <span>🎡 Vòng Quay</span>
             </button>
 
-            {/* Guest badge + Login button */}
+            {/* Guest badge + Login button — Login luôn nổi bật */}
+            <style>{`
+              @keyframes guest-login-pulse {
+                0%, 100% { box-shadow: 0 0 0 0 rgba(241, 196, 15, 0.6), 0 4px 14px rgba(241, 196, 15, 0.4); }
+                50%      { box-shadow: 0 0 0 8px rgba(241, 196, 15, 0), 0 4px 20px rgba(241, 196, 15, 0.7); }
+              }
+            `}</style>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div
                 title="Bạn đang chơi ở chế độ khách. Tiến trình lưu cục bộ trên trình duyệt."
@@ -388,21 +373,23 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
                 style={{
                   display: 'flex',
                   alignItems: 'center',
-                  gap: '6px',
-                  padding: '8px 14px',
-                  borderRadius: '10px',
-                  background: 'linear-gradient(135deg, #7c6fff 0%, #a29bfe 100%)',
-                  color: 'white',
-                  fontWeight: 800,
-                  fontSize: '0.85rem',
-                  border: 'none',
+                  gap: '8px',
+                  padding: '10px 18px',
+                  borderRadius: '12px',
+                  background: 'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)',
+                  color: '#1a1138',
+                  fontWeight: 900,
+                  fontSize: '0.95rem',
+                  border: '2px solid rgba(255, 255, 255, 0.4)',
                   cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(124, 111, 255, 0.35)',
-                  letterSpacing: 0.3,
+                  letterSpacing: 0.6,
+                  animation: 'guest-login-pulse 1.8s ease-in-out infinite',
+                  textTransform: 'uppercase',
                 }}
-                className="glass-interactive"
+                onMouseEnter={(e) => (e.currentTarget.style.transform = 'scale(1.04)')}
+                onMouseLeave={(e) => (e.currentTarget.style.transform = 'scale(1)')}
               >
-                <LogIn size={15} />
+                <LogIn size={17} strokeWidth={3} />
                 Đăng nhập
               </button>
             </div>
