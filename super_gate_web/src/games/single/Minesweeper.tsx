@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { RefreshCw, Flag, Eye, Lightbulb } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
 import confetti from 'canvas-confetti';
@@ -31,8 +31,14 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
   const [gameOver, setGameOver] = useState(false);
   const [won, setWon] = useState(false);
   const [flagMode, setFlagMode] = useState(false); // Mode for mobile tapping: reveal or flag
-  const [flagsCount, setFlagsCount] = useState(0);
   const [seconds, setSeconds] = useState(0);
+
+  // ⚠️ flagsCount derive từ grid (single source of truth, tránh drift)
+  const flagsCount = useMemo(() => {
+    let n = 0;
+    for (const row of grid) for (const cell of row) if (cell.isFlagged) n++;
+    return n;
+  }, [grid]);
   const [earnedCoins, setEarnedCoins] = useState<number | null>(null);
   const [coinBalance, setCoinBalance] = useState<number>(CoinService.getData().balance);
 
@@ -76,7 +82,6 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
     setFirstTap(true);
     setGameOver(false);
     setWon(false);
-    setFlagsCount(0);
     setSeconds(0);
     setEarnedCoins(null);
   };
@@ -129,43 +134,65 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
   };
 
   const handleCellClick = (r: number, c: number) => {
-    if (gameOver || won || grid[r][c].isRevealed) return;
+    if (gameOver || won) return;
 
     if (flagMode) {
       toggleFlag(r, c);
       return;
     }
 
-    if (grid[r][c].isFlagged) return;
+    // Dùng functional setGrid để luôn lấy state mới nhất (tránh stale closure)
+    setGrid((prev) => {
+      if (!prev[r] || !prev[r][c]) return prev;
+      if (prev[r][c].isRevealed || prev[r][c].isFlagged) return prev;
 
-    const nextGrid = [...grid.map(row => [...row])];
+      const next = prev.map((row) => row.map((cell) => ({ ...cell })));
 
-    if (firstTap) {
-      setFirstTap(false);
-      generateMines(nextGrid, r, c);
-    }
+      if (firstTap) {
+        setFirstTap(false);
+        generateMines(next, r, c);
+      }
 
-    if (nextGrid[r][c].isMine) {
-      // Game Over
-      revealAllMines(nextGrid);
-      return;
-    }
+      if (next[r][c].isMine) {
+        // reveal all mines
+        for (let rr = 0; rr < rows; rr++) {
+          for (let cc = 0; cc < cols; cc++) {
+            if (next[rr][cc].isMine) next[rr][cc].isRevealed = true;
+          }
+        }
+        setGameOver(true);
+        return next;
+      }
 
-    revealCell(nextGrid, r, c);
-    setGrid(nextGrid);
-    checkWinCondition(nextGrid);
+      revealCell(next, r, c);
+      // schedule win check after this batch
+      queueMicrotask(() => checkWinCondition(next));
+      return next;
+    });
   };
 
   const toggleFlag = (r: number, c: number, e?: React.MouseEvent) => {
     if (e) e.preventDefault(); // Prevent right click menu
-    if (gameOver || won || grid[r][c].isRevealed) return;
+    if (gameOver || won) return;
 
-    const nextGrid = [...grid.map(row => [...row])];
-    const cell = nextGrid[r][c];
-    cell.isFlagged = !cell.isFlagged;
-    
-    setFlagsCount((prev) => prev + (cell.isFlagged ? 1 : -1));
-    setGrid(nextGrid);
+    setGrid((prev) => {
+      if (!prev[r] || !prev[r][c]) return prev;
+      const cell = prev[r][c];
+      if (cell.isRevealed) return prev;
+
+      // Đếm cờ thật từ grid (single source of truth)
+      let currentFlags = 0;
+      for (const row of prev) for (const cl of row) if (cl.isFlagged) currentFlags++;
+
+      // Block nếu chưa cắm cờ + đã đủ flag = mineCount
+      if (!cell.isFlagged && currentFlags >= mineCount) {
+        return prev;
+      }
+
+      const next = prev.map((row) => row.map((cl) => ({ ...cl })));
+      next[r][c].isFlagged = !cell.isFlagged;
+      return next;
+    });
   };
 
   const revealCell = (gridState: Cell[][], r: number, c: number) => {
@@ -186,18 +213,6 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
         }
       }
     }
-  };
-
-  const revealAllMines = (gridState: Cell[][]) => {
-    setGameOver(true);
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        if (gridState[r][c].isMine) {
-          gridState[r][c].isRevealed = true;
-        }
-      }
-    }
-    setGrid(gridState);
   };
 
   const useHint = async () => {
@@ -221,15 +236,14 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
     if (!ok) return;
 
     const pick = safeCells[Math.floor(Math.random() * safeCells.length)];
-    const nextGrid = grid.map((row) => row.map((cell) => ({ ...cell })));
-    // Clear flag if any to avoid stale flag count
-    if (nextGrid[pick.r][pick.c].isFlagged) {
-      nextGrid[pick.r][pick.c].isFlagged = false;
-      setFlagsCount((prev) => Math.max(0, prev - 1));
-    }
-    revealCell(nextGrid, pick.r, pick.c);
-    setGrid(nextGrid);
-    checkWinCondition(nextGrid);
+    setGrid((prev) => {
+      const next = prev.map((row) => row.map((cell) => ({ ...cell })));
+      // Clear flag if any (cờ tự derive từ grid mới → không cần update count riêng)
+      next[pick.r][pick.c].isFlagged = false;
+      revealCell(next, pick.r, pick.c);
+      queueMicrotask(() => checkWinCondition(next));
+      return next;
+    });
   };
 
   const checkWinCondition = async (gridState: Cell[][]) => {
