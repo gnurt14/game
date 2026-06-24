@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
 import confetti from 'canvas-confetti';
 
@@ -73,13 +72,6 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
   const canvasHeight = 360;
   const gravity = 0.12;
 
-  const fruitTypes = [
-    { emoji: '🍉', color: '#e74c3c' }, // Watermelon
-    { emoji: '🍎', color: '#ff7675' }, // Apple
-    { emoji: '🍍', color: '#f39c12' }, // Pineapple
-    { emoji: ' kiwi', color: '#2ecc71' }, // Kiwi (we use emoji kiwi)
-  ];
-  // Helper to get raw emojis to avoid formatting issue
   const standardEmojis = ['🍉', '🍎', '🍍', '🥝'];
   const standardColors = ['#e74c3c', '#ff7675', '#f39c12', '#2ecc71'];
 
