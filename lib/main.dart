@@ -5,7 +5,10 @@
 //   SuperGateApp     → MaterialApp dark theme
 //   _AppGate         → Auth check → WelcomeScreen / HomeScreen
 
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
+import 'package:game/services/notification_services.dart';
 import 'auth/auth_service.dart';
 import 'auth/auth_screen.dart';
 import 'coin/coin_service.dart';
@@ -19,9 +22,15 @@ import 'home/home_screen.dart';
 // ENTRY POINT
 // =============================================================================
 
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  await Firebase.initializeApp();
+
+  FirebaseMessaging.onBackgroundMessage(firebaseBackgroundHandler);
+  await NotificationServices().init();
   // 1. Init Supabase (bắt buộc trước mọi thứ)
   await AuthService.initSupabase();
 
@@ -49,6 +58,7 @@ class SuperGateApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Super Gate',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(

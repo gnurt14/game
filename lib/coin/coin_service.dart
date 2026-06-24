@@ -30,6 +30,9 @@ class CoinData {
   final bool dailyClaimedToday;
   final int freeLuckyBoxes;      // Hộp may mắn miễn phí còn lại (new player gift)
   final int totalGamesPlayed;    // Tổng số game đã chơi
+  final List<String> ownedFrames; // Các khung viền đã mua
+  final String activeFrame;      // Khung viền đang đeo
+  final String lastWheelSpinDate;// Ngày quay vòng quay miễn phí gần nhất
 
   const CoinData({
     required this.balance,
@@ -43,10 +46,20 @@ class CoinData {
     required this.dailyClaimedToday,
     required this.freeLuckyBoxes,
     required this.totalGamesPlayed,
+    required this.ownedFrames,
+    required this.activeFrame,
+    required this.lastWheelSpinDate,
   });
 
   int get gamesCount => gamesPlayedToday.length;
   int get multiplier => boosterActive ? 2 : 1;
+
+  double get streakMultiplier {
+    if (streakDay >= 7) return 2.0;
+    if (streakDay >= 5) return 1.5;
+    if (streakDay >= 3) return 1.2;
+    return 1.0;
+  }
 
   Duration get boosterRemaining =>
       boosterActive && boosterExpiry != null
@@ -113,6 +126,9 @@ class CoinService {
   static const _kFreeLuckyBoxes   = 'coin_free_lucky_boxes';
   static const _kTotalGamesPlayed = 'coin_total_games_played';
   static const _kIsNewPlayer      = 'player_is_new';   // bool: false sau onboarding
+  static const _kOwnedFrames       = 'coin_owned_avatar_frames';
+  static const _kActiveFrame       = 'coin_active_avatar_frame';
+  static const _kLastWheelSpinDate = 'coin_last_wheel_spin_date';
 
   // ── In-memory cache ─────────────────────────────────────────────────────
   int _balance = 0;
@@ -126,6 +142,9 @@ class CoinService {
   String _mission5Date = '';
   int _freeLuckyBoxes = 0;
   int _totalGamesPlayed = 0;
+  List<String> _ownedFrames = ['none'];
+  String _activeFrame = 'none';
+  String _lastWheelSpinDate = '';
 
   // ── Sync debounce ────────────────────────────────────────────────────────
   Timer? _syncTimer;
@@ -143,6 +162,9 @@ class CoinService {
       dailyClaimedToday: false,
       freeLuckyBoxes: 0,
       totalGamesPlayed: 0,
+      ownedFrames: ['none'],
+      activeFrame: 'none',
+      lastWheelSpinDate: '',
     ),
   );
 
@@ -155,6 +177,13 @@ class CoinService {
 
   bool get _boosterActive =>
       _boosterExpiry != null && _boosterExpiry!.isAfter(DateTime.now());
+
+  double get streakMultiplier {
+    if (_streakDay >= 7) return 2.0;
+    if (_streakDay >= 5) return 1.5;
+    if (_streakDay >= 3) return 1.2;
+    return 1.0;
+  }
 
   bool _missionCollected(String missionDate) => missionDate == _todayStr();
 
@@ -170,6 +199,9 @@ class CoinService {
         dailyClaimedToday: _lastClaimDate == _todayStr(),
         freeLuckyBoxes: _freeLuckyBoxes,
         totalGamesPlayed: _totalGamesPlayed,
+        ownedFrames: List.unmodifiable(_ownedFrames),
+        activeFrame: _activeFrame,
+        lastWheelSpinDate: _lastWheelSpinDate,
       );
 
   void _notify() => notifier.value = _buildData();
@@ -217,21 +249,14 @@ class CoinService {
     _freeLuckyBoxes   = player.freeLuckyBoxes;
     _totalGamesPlayed = player.totalGamesPlayed;
 
-    // Booster: xóa nếu đã hết hạn
-    if (_boosterExpiry != null && !_boosterActive) _boosterExpiry = null;
-
-    // Games played today — reset nếu ngày mới
-    final gamesDateStr = _dateStr(player.gamesPlayedDate);
-    if (gamesDateStr == today) {
-      _gamesPlayedToday = Set<String>.from(player.gamesPlayedToday);
-      _gamesDate = today;
-    } else {
-      _gamesPlayedToday = {};
-      _gamesDate = today;
+    _activeFrame       = prefs.getString(_kActiveFrame) ?? 'none';
+    _lastWheelSpinDate = prefs.getString(_kLastWheelSpinDate) ?? '';
+    try {
+      final json = prefs.getString(_kOwnedFrames) ?? '["none"]';
+      _ownedFrames = List<String>.from(jsonDecode(json) as List);
+    } catch (_) {
+      _ownedFrames = ['none'];
     }
-
-    _mission3Date = _dateStr(player.mission3CollectedDate);
-    _mission5Date = _dateStr(player.mission5CollectedDate);
 
     // Ghi vào prefs để cache local
     await prefs.setInt(_kBalance, _balance);
@@ -249,6 +274,9 @@ class CoinService {
     await prefs.setString(_kMission3Date, _mission3Date);
     await prefs.setString(_kMission5Date, _mission5Date);
     await prefs.setInt(_kTotalGamesPlayed, _totalGamesPlayed);
+    await prefs.setString(_kActiveFrame, _activeFrame);
+    await prefs.setString(_kLastWheelSpinDate, _lastWheelSpinDate);
+    await prefs.setString(_kOwnedFrames, jsonEncode(_ownedFrames));
     await prefs.setBool(_kIsNewPlayer, false);
   }
 
@@ -280,6 +308,14 @@ class CoinService {
     _mission5Date     = prefs.getString(_kMission5Date) ?? '';
     _freeLuckyBoxes   = prefs.getInt(_kFreeLuckyBoxes) ?? 0;
     _totalGamesPlayed = prefs.getInt(_kTotalGamesPlayed) ?? 0;
+    _activeFrame      = prefs.getString(_kActiveFrame) ?? 'none';
+    _lastWheelSpinDate = prefs.getString(_kLastWheelSpinDate) ?? '';
+    try {
+      final json = prefs.getString(_kOwnedFrames) ?? '["none"]';
+      _ownedFrames = List<String>.from(jsonDecode(json) as List);
+    } catch (_) {
+      _ownedFrames = ['none'];
+    }
 
     // Booster
     final boosterMs = prefs.getInt(_kBoosterExpiry) ?? 0;
@@ -328,13 +364,15 @@ class CoinService {
       _kBalance, _kStreakDay, _kLastClaimDate, _kShieldCount, _kBoosterExpiry,
       _kGamesPlayed, _kGamesDate, _kMission3Date, _kMission5Date,
       _kFreeLuckyBoxes, _kTotalGamesPlayed, _kIsNewPlayer,
+      _kOwnedFrames, _kActiveFrame, _kLastWheelSpinDate,
     ]) {
       await prefs.remove(key);
     }
     _balance = 0; _streakDay = 0; _lastClaimDate = ''; _shieldCount = 0;
     _boosterExpiry = null; _gamesPlayedToday = {}; _gamesDate = '';
     _mission3Date = ''; _mission5Date = ''; _freeLuckyBoxes = 0;
-    _totalGamesPlayed = 0;
+    _totalGamesPlayed = 0; _ownedFrames = ['none']; _activeFrame = 'none';
+    _lastWheelSpinDate = '';
     _notify();
   }
 
@@ -346,12 +384,20 @@ class CoinService {
     _gamesPlayedToday = {};
     _gamesDate      = _todayStr();
     _totalGamesPlayed = 0;
+    _activeFrame    = 'none';
+    _ownedFrames    = ['none'];
+    _lastWheelSpinDate = '';
 
     await prefs.setInt(_kBalance, _balance);
     await prefs.setInt(_kFreeLuckyBoxes, _freeLuckyBoxes);
-    await prefs.setInt(_kTotalGamesPlayed, 0);
-    await prefs.setBool(_kIsNewPlayer, false);   // Đánh dấu đã khởi tạo
+    await prefs.setInt(_kStreakDay, _streakDay);
+    await prefs.setInt(_kShieldCount, _shieldCount);
     await prefs.setString(_kGamesDate, _gamesDate);
+    await prefs.setInt(_kTotalGamesPlayed, _totalGamesPlayed);
+    await prefs.setString(_kActiveFrame, 'none');
+    await prefs.setString(_kOwnedFrames, jsonEncode(['none']));
+    await prefs.setString(_kLastWheelSpinDate, '');
+    await prefs.setBool(_kIsNewPlayer, false);   // Đánh dấu đã khởi tạo
 
     _notify();
     _scheduleSync();
@@ -453,7 +499,10 @@ class CoinService {
 
     final isFirst = !_gamesPlayedToday.contains(gameName);
     final baseEarn = isFirst ? 15 : 5;
-    final earned = baseEarn * (_boosterActive ? 2 : 1);
+    
+    // Nhân thêm hệ số chuỗi ngày (Streak Multiplier)
+    final double mult = (_boosterActive ? 2.0 : 1.0) * streakMultiplier;
+    final earned = (baseEarn * mult).round();
 
     await _addCoins(earned, prefs);
     _gamesPlayedToday.add(gameName);
@@ -481,7 +530,7 @@ class CoinService {
     if (_gamesPlayedToday.length >= 5 && _mission5Date != today) {
       _mission5Date = today;
       await prefs.setString(_kMission5Date, today);
-      await _addCoins(200, prefs);
+      await _addCoins(150, prefs);
     }
   }
 
@@ -494,7 +543,106 @@ class CoinService {
     );
   }
 
-  // ── Shop ─────────────────────────────────────────────────────────────────
+  // ── Shop / Spin & Cosmetics ──────────────────────────────────────────────
+
+  /// Quay vòng quay may mắn. Trả về (xu nhận được, index segment thắng).
+  /// Phí lượt quay là 30 xu nếu không miễn phí.
+  ///
+  /// 8 phần thưởng (khớp với LuckyWheelDialog._kSegments):
+  ///   0: 20 xu    — 30%
+  ///   1: 40 xu    — 20%
+  ///   2: 80 xu    — 15%
+  ///   3: Lá chắn  — 12%
+  ///   4: Hộp MM   — 10%
+  ///   5: Booster  —  7%
+  ///   6: 150 xu   —  4%
+  ///   7: Jackpot  —  2%
+  Future<(int, int)> spinLuckyWheel({required bool isFree}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!isFree) {
+      if (_balance < 30) throw Exception('Không đủ xu');
+      await _addCoins(-30, prefs);
+    } else {
+      _lastWheelSpinDate = _todayStr();
+      await prefs.setString(_kLastWheelSpinDate, _lastWheelSpinDate);
+    }
+
+    final rng = Random();
+    final roll = rng.nextInt(100);
+    int rewardCoins = 0;
+    int segmentIndex;
+
+    if (roll < 30) {
+      // 0: 20 xu
+      segmentIndex = 0;
+      rewardCoins = 20;
+      await _addCoins(20, prefs);
+    } else if (roll < 50) {
+      // 1: 40 xu
+      segmentIndex = 1;
+      rewardCoins = 40;
+      await _addCoins(40, prefs);
+    } else if (roll < 65) {
+      // 2: 80 xu
+      segmentIndex = 2;
+      rewardCoins = 80;
+      await _addCoins(80, prefs);
+    } else if (roll < 77) {
+      // 3: Lá chắn streak
+      segmentIndex = 3;
+      _shieldCount++;
+      await prefs.setInt(_kShieldCount, _shieldCount);
+    } else if (roll < 87) {
+      // 4: Hộp may mắn miễn phí
+      segmentIndex = 4;
+      _freeLuckyBoxes++;
+      await prefs.setInt(_kFreeLuckyBoxes, _freeLuckyBoxes);
+    } else if (roll < 94) {
+      // 5: Booster x2 (2h)
+      segmentIndex = 5;
+      _boosterExpiry = DateTime.now().add(const Duration(hours: 2));
+      await prefs.setInt(_kBoosterExpiry, _boosterExpiry!.millisecondsSinceEpoch);
+    } else if (roll < 98) {
+      // 6: 150 xu
+      segmentIndex = 6;
+      rewardCoins = 150;
+      await _addCoins(150, prefs);
+    } else {
+      // 7: Jackpot 300 xu
+      segmentIndex = 7;
+      rewardCoins = 300;
+      await _addCoins(300, prefs);
+    }
+
+    _notify();
+    _scheduleSync();
+    return (rewardCoins, segmentIndex);
+  }
+
+  /// Mua khung viền ảnh đại diện. Trả về true nếu thành công.
+  Future<bool> buyAvatarFrame(String frameId, int price) async {
+    if (_balance < price) return false;
+    if (_ownedFrames.contains(frameId)) return true;
+
+    final prefs = await SharedPreferences.getInstance();
+    await _addCoins(-price, prefs);
+
+    _ownedFrames.add(frameId);
+    await prefs.setString(_kOwnedFrames, jsonEncode(_ownedFrames));
+
+    _notify();
+    _scheduleSync();
+    return true;
+  }
+
+  /// Thiết lập khung viền ảnh đại diện đang kích hoạt sử dụng
+  Future<void> setActiveFrame(String frameId) async {
+    if (!_ownedFrames.contains(frameId) && frameId != 'none') return;
+    final prefs = await SharedPreferences.getInstance();
+    _activeFrame = frameId;
+    await prefs.setString(_kActiveFrame, _activeFrame);
+    _notify();
+  }
 
   Future<bool> purchaseBooster() async {
     if (_balance < 300) return false;
@@ -581,6 +729,15 @@ class CoinService {
     _scheduleSync();
   }
 
+  /// Kích hoạt Booster miễn phí (không tốn xu) trong số giờ chỉ định.
+  Future<void> activateFreeBooster(int hours) async {
+    final prefs = await SharedPreferences.getInstance();
+    _boosterExpiry = DateTime.now().add(Duration(hours: hours));
+    await prefs.setInt(_kBoosterExpiry, _boosterExpiry!.millisecondsSinceEpoch);
+    _notify();
+    _scheduleSync();
+  }
+
   // ── Score-Based Game Reward ──────────────────────────────────────────────
 
   Future<int> reportGameScore(
@@ -603,7 +760,11 @@ class CoinService {
     );
     if (base <= 0) return 0;
     final prefs = await SharedPreferences.getInstance();
-    final earned = base * (_boosterActive ? 2 : 1);
+    
+    // Nhân thêm hệ số chuỗi ngày (Streak Multiplier)
+    final double mult = (_boosterActive ? 2.0 : 1.0) * streakMultiplier;
+    final earned = (base * mult).round();
+
     await _addCoins(earned, prefs);
     _notify();
     _scheduleSync();

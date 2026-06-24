@@ -198,6 +198,10 @@ class _ShopScreenState extends State<ShopScreen> {
                   const SizedBox(height: 10),
                   _buildShieldCard(),
                   const SizedBox(height: 24),
+                  _buildSectionLabel('🎨 Trang trí hồ sơ'),
+                  const SizedBox(height: 10),
+                  _buildCosmeticSection(),
+                  const SizedBox(height: 24),
                   _buildEarnTip(),
                 ],
               ),
@@ -485,6 +489,230 @@ class _ShopScreenState extends State<ShopScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCosmeticSection() {
+    return Column(
+      children: [
+        _buildCosmeticCard(
+          id: 'neon_purple',
+          name: 'Khung Neon Tím',
+          description: 'Hào quang neon ánh tím huyền ảo bao quanh ảnh đại diện',
+          price: 400,
+          color: const Color(0xFFB06FFF),
+          icon: '✨',
+        ),
+        const SizedBox(height: 12),
+        _buildCosmeticCard(
+          id: 'aurora',
+          name: 'Khung Cực Quang',
+          description: 'Dải màu cực quang chuyển động mượt mà',
+          price: 600,
+          color: const Color(0xFF00E5FF),
+          icon: '🌈',
+        ),
+        const SizedBox(height: 12),
+        _buildCosmeticCard(
+          id: 'royal_gold',
+          name: 'Vương Miện Hoàng Gia',
+          description: 'Khung vàng ánh kim đính kèm vương miện hoàng gia quý phái',
+          price: 800,
+          color: const Color(0xFFFFD700),
+          icon: '👑',
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCosmeticCard({
+    required String id,
+    required String name,
+    required String description,
+    required int price,
+    required Color color,
+    required String icon,
+  }) {
+    final bool isOwned = _data.ownedFrames.contains(id);
+    final bool isActive = _data.activeFrame == id;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF111126),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isActive ? color : color.withOpacity(0.15),
+          width: isActive ? 2 : 1,
+        ),
+        boxShadow: isActive
+            ? [BoxShadow(color: color.withOpacity(0.15), blurRadius: 10)]
+            : null,
+      ),
+      child: Row(
+        children: [
+          // Icon preview with circle border matching the frame style
+          Container(
+            width: 50,
+            height: 50,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: color,
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.2),
+                  blurRadius: 6,
+                )
+              ],
+            ),
+            child: Center(
+              child: Text(
+                icon,
+                style: const TextStyle(fontSize: 24),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    color: Color(0xFF8888AA),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Action button
+          _buildCosmeticActionButton(
+            id: id,
+            name: name,
+            price: price,
+            isOwned: isOwned,
+            isActive: isActive,
+            color: color,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCosmeticActionButton({
+    required String id,
+    required String name,
+    required int price,
+    required bool isOwned,
+    required bool isActive,
+    required Color color,
+  }) {
+    if (isActive) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color),
+        ),
+        child: Text(
+          'Đang Dùng',
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.bold,
+            fontSize: 12,
+          ),
+        ),
+      );
+    }
+
+    if (isOwned) {
+      return SizedBox(
+        height: 36,
+        child: OutlinedButton(
+          onPressed: () async {
+            await CoinService.instance.setActiveFrame(id);
+            _showSnack('Đã trang bị $name!');
+          },
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: color),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+          ),
+          child: Text(
+            'Trang Bị',
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Purchase
+    return SizedBox(
+      height: 36,
+      child: ElevatedButton(
+        onPressed: () async {
+          final confirm = await _confirm(
+            title: 'Mua Khung Trang Trí?',
+            body: 'Bạn có muốn mua khung viền này với giá $price xu không?',
+            icon: '🎨',
+            color: color,
+          );
+          if (!confirm) return;
+
+          final ok = await CoinService.instance.buyAvatarFrame(id, price);
+          if (ok) {
+            _showSnack('Mua thành công! Đã thêm vào bộ sưu tập.');
+          } else {
+            _showSnack('Không đủ xu để mua vật phẩm này!', isError: true);
+          }
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: color,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              '🪙 ',
+              style: TextStyle(fontSize: 12),
+            ),
+            Text(
+              '$price',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

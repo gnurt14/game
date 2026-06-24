@@ -16,6 +16,7 @@ import '../coin/daily_reward_dialog.dart';
 import '../coin/shop_screen.dart';
 import '../coin/weekly_mission_service.dart';
 import '../multiplayer/screens/multiplayer_hub_screen.dart';
+import '../gift/lucky_wheel_dialog.dart';
 import 'game_entry.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -28,6 +29,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   CoinData _coinData = CoinService.instance.notifier.value;
   WeeklyMissionData _weeklyData = WeeklyMissionService.instance.notifier.value;
+  bool _hasUnreadNotifications = true;
 
   @override
   void initState() {
@@ -128,6 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       _buildFeaturedBanner(),
                       const SizedBox(height: 14),
                     ],
+                    _buildStreakMultiplierBar(),
                     _buildMissionBar(),
                     const SizedBox(height: 10),
                     _buildWeeklyMissionBar(),
@@ -157,116 +160,495 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader() {
     return Row(
       children: [
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF7C6FFF), Color(0xFFB06FFF)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF7C6FFF).withOpacity(0.4),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 30),
-        ),
-        const SizedBox(width: 16),
-        const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        // Compact Logo and Title
+        Row(
           children: [
-            Text(
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF7C6FFF), Color(0xFFB06FFF)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF7C6FFF).withOpacity(0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.sports_esports_rounded, color: Colors.white, size: 20),
+            ),
+            const SizedBox(width: 10),
+            const Text(
               'SUPER GATE',
               style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2.5),
-            ),
-            Text(
-              'Chọn game để bắt đầu',
-              style: TextStyle(color: Color(0xFF7777AA), fontSize: 12),
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+              ),
             ),
           ],
         ),
         const Spacer(),
-        // Nút tài khoản
-        GestureDetector(
-          onTap: () => Navigator.push(
-              context, MaterialPageRoute(builder: (_) => const AccountScreen())),
-          child: Container(
+        // Actions
+        Row(
+          children: [
+            _buildNotificationButton(),
+            const SizedBox(width: 8),
+            _buildLuckyWheelButton(),
+            const SizedBox(width: 8),
+            _buildCoinDisplay(),
+            const SizedBox(width: 8),
+            _buildAvatar(),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLuckyWheelButton() {
+    final now = _todayStr();
+    final isFree = _coinData.lastWheelSpinDate != now;
+
+    return GestureDetector(
+      onTap: _showLuckyWheelDialog,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
             width: 34,
             height: 34,
-            margin: const EdgeInsets.only(right: 6),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF7C6FFF), Color(0xFFB06FFF)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+              color: const Color(0xFF161630),
+              border: Border.all(
+                color: const Color(0xFFFFD700).withOpacity(0.3),
+                width: 1.5,
               ),
-              boxShadow: [BoxShadow(
-                color: const Color(0xFF7C6FFF).withOpacity(0.35),
-                blurRadius: 10,
-              )],
             ),
-            child: Center(
-              child: Text(
-                AuthService.instance.displayName.isNotEmpty
-                    ? AuthService.instance.displayName[0].toUpperCase()
-                    : '?',
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900),
+            child: const Center(
+              child: Icon(
+                Icons.casino_rounded,
+                color: Color(0xFFFFD700),
+                size: 18,
               ),
             ),
           ),
-        ),
-        GestureDetector(
-          onTap: () => Navigator.push(
-              context, MaterialPageRoute(builder: (_) => const ShopScreen())),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            decoration: BoxDecoration(
-              color: const Color(0xFF1E1A00),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: _coinData.boosterActive
-                    ? const Color(0xFFFF6B00)
-                    : const Color(0xFFFFD700).withOpacity(0.5),
-                width: _coinData.boosterActive ? 2 : 1.5,
+          if (isFree)
+            Positioned(
+              right: -2,
+              top: -2,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.redAccent,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Text(
+                  'FREE',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 6,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
-              boxShadow: _coinData.boosterActive
-                  ? [BoxShadow(color: const Color(0xFFFF6B00).withOpacity(0.3), blurRadius: 8)]
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showLuckyWheelDialog() {
+    LuckyWheelDialog.show(context);
+  }
+
+  String _todayStr() {
+    final now = DateTime.now().toLocal();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildNotificationButton() {
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          _hasUnreadNotifications = false;
+        });
+        _showNotificationsBottomSheet(context);
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF161630),
+              border: Border.all(
+                color: const Color(0xFF7C6FFF).withOpacity(0.3),
+                width: 1.5,
+              ),
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.notifications_none_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+          if (_hasUnreadNotifications)
+            Positioned(
+              right: 0,
+              top: 0,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: const BoxDecoration(
+                  color: Colors.redAccent,
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCoinDisplay() {
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const ShopScreen())),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E1A00),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _coinData.boosterActive
+                ? const Color(0xFFFF6B00)
+                : const Color(0xFFFFD700).withOpacity(0.5),
+            width: _coinData.boosterActive ? 1.5 : 1,
+          ),
+          boxShadow: _coinData.boosterActive
+              ? [BoxShadow(color: const Color(0xFFFF6B00).withOpacity(0.3), blurRadius: 6)]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(_coinData.boosterActive ? '⚡' : '🪙',
+                style: const TextStyle(fontSize: 14)),
+            const SizedBox(width: 4),
+            Text(
+              _formatBalance(_coinData.balance),
+              style: const TextStyle(
+                  color: Color(0xFFFFD700),
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.storefront_rounded, color: Color(0xFF888866), size: 12),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAvatar() {
+    final activeFrame = _coinData.activeFrame;
+    
+    Color frameColor = Colors.transparent;
+    bool hasGlow = false;
+    List<Color>? gradientColors;
+    Widget? overlayWidget;
+
+    if (activeFrame == 'neon_purple') {
+      frameColor = const Color(0xFFB06FFF);
+      hasGlow = true;
+    } else if (activeFrame == 'aurora') {
+      gradientColors = [
+        const Color(0xFF00E5FF),
+        const Color(0xFFE040FB),
+        const Color(0xFF00E5FF),
+      ];
+      hasGlow = true;
+    } else if (activeFrame == 'royal_gold') {
+      frameColor = const Color(0xFFFFD700);
+      hasGlow = true;
+      overlayWidget = const Positioned(
+        top: -6,
+        left: 0,
+        right: 0,
+        child: Center(
+          child: Text('👑', style: TextStyle(fontSize: 10)),
+        ),
+      );
+    }
+
+    Widget avatarCore = Container(
+      width: 30,
+      height: 30,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFF7C6FFF), Color(0xFFB06FFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Text(
+          AuthService.instance.displayName.isNotEmpty
+              ? AuthService.instance.displayName[0].toUpperCase()
+              : '?',
+          style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w900),
+        ),
+      ),
+    );
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const AccountScreen())),
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            padding: const EdgeInsets.all(2),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: frameColor != Colors.transparent
+                  ? Border.all(color: frameColor, width: 2)
+                  : null,
+              gradient: gradientColors != null
+                  ? SweepGradient(colors: gradientColors)
+                  : null,
+              boxShadow: hasGlow
+                  ? [
+                      BoxShadow(
+                        color: (frameColor != Colors.transparent ? frameColor : const Color(0xFF00E5FF)).withOpacity(0.4),
+                        blurRadius: 8,
+                      )
+                    ]
                   : null,
             ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(_coinData.boosterActive ? '⚡' : '🪙',
-                    style: const TextStyle(fontSize: 16)),
-                const SizedBox(width: 6),
-                Text(
-                  _formatBalance(_coinData.balance),
-                  style: const TextStyle(
-                      color: Color(0xFFFFD700),
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16),
+            child: Center(child: avatarCore),
+          ),
+          if (overlayWidget != null) overlayWidget,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStreakMultiplierBar() {
+    final streak = _coinData.streakDay;
+    final mult = _coinData.streakMultiplier;
+    
+    if (streak == 0) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E1E3F),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFF7C6FFF).withOpacity(0.3),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          const Text('🔥', style: TextStyle(fontSize: 16)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Chuỗi $streak ngày liên tiếp',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7C6FFF),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              'x$mult xu',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showNotificationsBottomSheet(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF0F0F25),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            border: Border(
+              top: BorderSide(color: Color(0xFF2E2E5D), width: 1.5),
+            ),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
-                const SizedBox(width: 4),
-                const Icon(Icons.storefront_rounded, color: Color(0xFF888866), size: 14),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Thông Báo',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      'Đóng',
+                      style: TextStyle(color: Color(0xFF7C6FFF), fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const Divider(color: Color(0xFF2E2E5D), height: 24),
+              _buildNotificationItem(
+                icon: Icons.celebration_rounded,
+                iconColor: const Color(0xFFFFD700),
+                title: 'Chào mừng tới Super Gate! 🎮',
+                body: 'Bắt đầu hành trình chơi game, tích lũy xu và đổi quà hấp dẫn ngay hôm nay.',
+                time: '1 giờ trước',
+              ),
+              const SizedBox(height: 12),
+              _buildNotificationItem(
+                icon: Icons.bolt_rounded,
+                iconColor: const Color(0xFFFF6B00),
+                title: 'Nhân đôi phần thưởng ⚡',
+                body: 'Sử dụng vật phẩm Tăng Tốc (Booster) trong Cửa Hàng để nhận gấp đôi xu thưởng.',
+                time: '4 giờ trước',
+              ),
+              const SizedBox(height: 12),
+              _buildNotificationItem(
+                icon: Icons.calendar_month_rounded,
+                iconColor: const Color(0xFF7C6FFF),
+                title: 'Nhiệm vụ tuần mới 📅',
+                body: 'Đã cập nhật danh sách nhiệm vụ tuần. Hoàn thành để nhận những rương quà siêu cấp.',
+                time: '1 ngày trước',
+              ),
+              const SizedBox(height: 24),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildNotificationItem({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String body,
+    required String time,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF181838),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF7C6FFF).withOpacity(0.1),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  body,
+                  style: const TextStyle(
+                    color: Color(0xFFA0A0C0),
+                    fontSize: 12,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  time,
+                  style: const TextStyle(
+                    color: Color(0xFF606080),
+                    fontSize: 10,
+                  ),
+                ),
               ],
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 

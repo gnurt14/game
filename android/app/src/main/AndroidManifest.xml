@@ -8,6 +8,9 @@
 
     <!-- Giữ màn hình sáng trong lúc chơi game -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
+
+    <!-- Thông báo: Yêu cầu quyền gửi thông báo trên Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="game"
         android:name="${applicationName}"
