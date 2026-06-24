@@ -135,16 +135,17 @@ export const MysteryCrate: React.FC<MysteryCrateProps> = ({ isOpen, onClose }) =
       // Faster early, slower at end (ease-out)
       const interval = 50 + Math.floor(progress * progress * 350);
 
+      // Done — finalize first so we don't get stuck in the nearMiss branch.
+      if (elapsed >= totalDuration) {
+        setRollingDisplay(outcome.coins);
+        finalize(outcome, tier);
+        return;
+      }
       // Final phase — show near-miss display if applicable
       if (elapsed >= totalDuration - 600 && outcome.nearMiss && !outcome.isJackpot) {
-        // Show value near the jackpot, then "slide back" to the actual reward
         setRollingDisplay(tier.jackpotReward - Math.floor(Math.random() * 50));
-      } else if (elapsed >= totalDuration) {
-        setRollingDisplay(outcome.coins);
-        finalize(outcome);
-        return;
       } else {
-        // Random spinning numbers between min and jackpot (with bias toward middle)
+        // Random spinning numbers
         const upper = outcome.isJackpot ? tier.jackpotReward : tier.maxReward * 1.4;
         setRollingDisplay(tier.minReward + Math.floor(Math.random() * (upper - tier.minReward)));
       }
@@ -156,8 +157,10 @@ export const MysteryCrate: React.FC<MysteryCrateProps> = ({ isOpen, onClose }) =
     tick();
   };
 
-  const finalize = async (outcome: { coins: number; isJackpot: boolean; nearMiss: boolean }) => {
-    if (!selectedTier && !TIERS.length) return;
+  const finalize = async (
+    outcome: { coins: number; isJackpot: boolean; nearMiss: boolean },
+    tier: TierConfig,
+  ) => {
     await CoinService.earnCoins(outcome.coins);
     setResult(outcome);
     setPhase('revealed');
@@ -166,7 +169,7 @@ export const MysteryCrate: React.FC<MysteryCrateProps> = ({ isOpen, onClose }) =
       confetti({ particleCount: 180, spread: 100, origin: { x: 0.5, y: 0.5 } });
       setTimeout(() => confetti({ particleCount: 120, spread: 80, origin: { x: 0.25, y: 0.6 } }), 250);
       setTimeout(() => confetti({ particleCount: 120, spread: 80, origin: { x: 0.75, y: 0.6 } }), 450);
-    } else if (outcome.coins >= (selectedTier?.maxReward || 0) * 0.7) {
+    } else if (outcome.coins >= tier.maxReward * 0.7) {
       confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
     } else {
       confetti({ particleCount: 30, spread: 40, origin: { y: 0.7 } });

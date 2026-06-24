@@ -191,14 +191,14 @@ export const CrashGame: React.FC<CrashGameProps> = ({ onClose }) => {
   const cashOut = () => doCashOut();
 
   return (
-    <div className="glass fullscreen-game-container">
+    <div className="glass fullscreen-game-container" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <style>{`
         @keyframes crash-shake { 0%,100%{transform:translate(0,0)} 25%{transform:translate(-4px,2px)} 75%{transform:translate(4px,-2px)} }
         @keyframes crash-pulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.05)} }
       `}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 'var(--border-glass)', paddingBottom: '14px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 'var(--border-glass)', paddingBottom: '14px', marginBottom: '12px', flexShrink: 0 }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>💥 Crash Game</h2>
           <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
@@ -209,7 +209,7 @@ export const CrashGame: React.FC<CrashGameProps> = ({ onClose }) => {
       </div>
 
       {/* History bar */}
-      <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '14px', paddingBottom: '4px' }}>
+      <div style={{ display: 'flex', gap: '6px', overflowX: 'auto', marginBottom: '10px', paddingBottom: '4px', flexShrink: 0 }}>
         {history.length === 0 ? (
           <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Chưa có round nào.</span>
         ) : history.map((h, i) => (
@@ -226,7 +226,7 @@ export const CrashGame: React.FC<CrashGameProps> = ({ onClose }) => {
         ))}
       </div>
 
-      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px', overflowY: 'auto', paddingBottom: '12px', minHeight: 0 }}>
         {/* Graph */}
         <div style={{
           position: 'relative',

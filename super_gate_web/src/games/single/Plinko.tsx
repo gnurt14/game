@@ -257,9 +257,9 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
   }, []);
 
   return (
-    <div className="glass fullscreen-game-container">
+    <div className="glass fullscreen-game-container" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 'var(--border-glass)', paddingBottom: '14px', marginBottom: '16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 'var(--border-glass)', paddingBottom: '14px', marginBottom: '12px', flexShrink: 0 }}>
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>🎯 Plinko</h2>
           <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
@@ -269,7 +269,7 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
         <button onClick={onClose} className="btn btn-danger">Quay lại</button>
       </div>
 
-      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', overflowY: 'auto', paddingBottom: '12px', minHeight: 0 }}>
         <canvas
           ref={canvasRef}
           width={WIDTH}
@@ -278,7 +278,11 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
             borderRadius: '14px',
             border: 'var(--border-glass)',
             background: 'rgba(0,0,0,0.3)',
-            maxWidth: '100%',
+            width: '100%',
+            maxWidth: `${WIDTH}px`,
+            height: 'auto',
+            aspectRatio: `${WIDTH} / ${HEIGHT}`,
+            flexShrink: 0,
           }}
         />
 
