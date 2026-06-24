@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Search, Play, CheckCircle, Circle } from 'lucide-react';
 import { CoinService, MissionStatus, CoinData } from '../services/coinService';
 import { GameCategory } from '../services/weeklyMissionService';
+import { BetQuestsService, Quest } from '../services/betQuestsService';
 
 export interface GameMetadata {
   id: string;
@@ -44,14 +45,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPlayGame }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [missionStatus, setMissionStatus] = useState<MissionStatus>(CoinService.getMissionStatus());
   const [coinData, setCoinData] = useState<CoinData>(CoinService.getData());
+  const [betQuests, setBetQuests] = useState<Quest[]>(BetQuestsService.getQuests());
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     const unsub = CoinService.subscribe((data) => {
       setMissionStatus(CoinService.getMissionStatus());
       setCoinData(data);
     });
-    return unsub;
+    const unsubQuests = BetQuestsService.subscribe(() => {
+      setBetQuests(BetQuestsService.getQuests());
+    });
+    return () => {
+      unsub();
+      unsubQuests();
+    };
   }, []);
+
+  const handleClaimQuest = async (q: Quest) => {
+    const ok = await BetQuestsService.claim(q.id);
+    if (ok) {
+      setToast(`+${q.reward} xu`);
+      setTimeout(() => setToast(null), 2200);
+    }
+  };
 
   const categories = [
     { id: 'all', name: 'Tất Cả' },
@@ -71,7 +88,106 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPlayGame }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
+
+      {/* Bet Quests Panel — NHIỆM VỤ CƯỢC HÔM NAY */}
+      <div className="glass" style={{ padding: '20px 24px', border: '1px solid rgba(241, 196, 15, 0.18)' }}>
+        <h3 style={{ fontSize: '1.1rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+          🎯 NHIỆM VỤ CƯỢC HÔM NAY
+        </h3>
+        <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginBottom: '14px' }}>
+          Hoàn thành để nhận thêm xu. Quest reset hàng ngày.
+        </p>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '12px' }}>
+          {betQuests.map((q) => {
+            const percent = Math.min(100, (q.progress / q.target) * 100);
+            const completed = q.progress >= q.target;
+            const canClaim = completed && !q.claimed;
+            return (
+              <div
+                key={q.id}
+                style={{
+                  background: q.claimed ? 'rgba(46, 204, 113, 0.08)' : 'rgba(255, 255, 255, 0.03)',
+                  border: q.claimed ? '1px solid rgba(46, 204, 113, 0.35)' : 'var(--border-glass)',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '8px',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 700, lineHeight: 1.3 }}>{q.label}</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#f1c40f', whiteSpace: 'nowrap' }}>+{q.reward} xu</span>
+                </div>
+
+                {/* Progress bar */}
+                <div style={{ height: '8px', background: 'rgba(255, 255, 255, 0.08)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div
+                    style={{
+                      width: `${percent}%`,
+                      height: '100%',
+                      background: q.claimed
+                        ? 'linear-gradient(90deg, #2ecc71, #27ae60)'
+                        : 'linear-gradient(90deg, #f1c40f, #ffa500)',
+                      transition: 'width 0.3s',
+                    }}
+                  />
+                </div>
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>
+                    {Math.min(q.progress, q.target)} / {q.target}
+                  </span>
+                  <button
+                    onClick={() => handleClaimQuest(q)}
+                    disabled={!canClaim}
+                    className="btn"
+                    style={{
+                      padding: '4px 10px',
+                      fontSize: '0.72rem',
+                      borderRadius: '8px',
+                      fontWeight: 800,
+                      background: q.claimed
+                        ? 'rgba(46, 204, 113, 0.2)'
+                        : canClaim
+                        ? 'linear-gradient(135deg, #f1c40f, #ffa500)'
+                        : 'rgba(255, 255, 255, 0.05)',
+                      color: q.claimed ? '#2ecc71' : canClaim ? '#1a1a1a' : 'var(--color-text-muted)',
+                      cursor: canClaim ? 'pointer' : 'not-allowed',
+                      border: 'none',
+                    }}
+                  >
+                    {q.claimed ? '✓ Đã nhận' : canClaim ? 'Nhận' : 'Nhận'}
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Toast nhận xu */}
+      {toast && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: 'linear-gradient(135deg, #f1c40f, #ffa500)',
+            color: '#1a1a1a',
+            padding: '12px 24px',
+            borderRadius: '999px',
+            fontWeight: 800,
+            zIndex: 2000,
+            boxShadow: '0 6px 20px rgba(0,0,0,0.3)',
+          }}
+        >
+          🪙 {toast}
+        </div>
+      )}
+
       {/* Daily Missions Progress Panel */}
       <div className="glass" style={{ padding: '20px 24px', border: '1px solid rgba(124, 111, 255, 0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
