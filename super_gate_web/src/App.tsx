@@ -12,6 +12,7 @@ import { MultiplayerLobby } from './components/MultiplayerLobby';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { LuckyWheelModal } from './components/LuckyWheelModal';
 import { WelcomeBackModal } from './components/WelcomeBackModal';
+import { ForceUpdateModal } from './components/ForceUpdateModal';
 
 // Services
 import { AuthService, PlayerModel } from './services/authService';
@@ -47,7 +48,6 @@ import { GameRoomView } from './components/GameRoomView';
 
 export const App: React.FC = () => {
   const [player, setPlayer] = useState<PlayerModel | null>(null);
-  const [isGuest, setIsGuest] = useState(false);
   const [initializing, setInitializing] = useState(true);
 
   // Layout routing state
@@ -69,13 +69,8 @@ export const App: React.FC = () => {
       if (p) {
         setPlayer(p);
         await CoinService.loadFromPlayer(p);
-      } else {
-        const guestBalance = localStorage.getItem('coin_balance');
-        if (guestBalance !== null) {
-          setIsGuest(true);
-        }
       }
-      // Initialize coin system cache
+      // Initialize coin system cache (no-op nếu chưa login — sẽ init khi login OK)
       await CoinService.init();
       setInitializing(false);
     };
@@ -86,7 +81,6 @@ export const App: React.FC = () => {
     const unsub = AuthService.subscribe((p) => {
       setPlayer(p);
       if (p) {
-        setIsGuest(false);
         CoinService.loadFromPlayer(p);
       }
     });
@@ -95,50 +89,51 @@ export const App: React.FC = () => {
   }, []);
 
   const handleLoginSuccess = () => {
-    setIsGuest(false);
-  };
-
-  const handlePlayAsGuest = async () => {
-    localStorage.setItem('coin_balance', '500');
-    localStorage.setItem('coin_free_lucky_boxes', '3');
-    setIsGuest(true);
-    await CoinService.init({ isNewPlayer: true });
+    // AuthService.subscribe sẽ set player
   };
 
   // Trigger daily checkin modal automatically on startup if not claimed today
   useEffect(() => {
-    if ((player || isGuest) && !initializing) {
+    if (player && !initializing) {
       const info = CoinService.getDailyRewardInfo();
       if (info.shouldShow) {
         setTimeout(() => setIsDailyOpen(true), 1500);
       }
     }
-  }, [player, isGuest, initializing]);
+  }, [player, initializing]);
 
   // Trigger Welcome Back modal nếu player offline >24h (hoặc lần đầu).
   useEffect(() => {
-    if ((player || isGuest) && !initializing) {
+    if (player && !initializing) {
       if (StreakService.shouldShowWelcomeBack()) {
         // Delay nhẹ để không xung đột với DailyReward modal.
         setTimeout(() => setIsWelcomeBackOpen(true), 2800);
       }
     }
-  }, [player, isGuest, initializing]);
+  }, [player, initializing]);
 
   if (initializing) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', color: 'white' }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--primary-color)', borderRadius: '50%', animation: 'spin-slow 1s linear infinite', margin: '0 auto 16px auto' }}></div>
-          <p style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>Đang tải tài khoản...</p>
+      <>
+        <ForceUpdateModal />
+        <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-primary)', color: 'white' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'var(--primary-color)', borderRadius: '50%', animation: 'spin-slow 1s linear infinite', margin: '0 auto 16px auto' }}></div>
+            <p style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>Đang tải tài khoản...</p>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  // If not logged in and not guest, show Auth screen
-  if (!player && !isGuest) {
-    return <AuthScreen onLoginSuccess={handleLoginSuccess} onPlayAsGuest={handlePlayAsGuest} />;
+  // Bắt buộc login: nếu chưa login → AuthScreen
+  if (!player) {
+    return (
+      <>
+        <ForceUpdateModal />
+        <AuthScreen onLoginSuccess={handleLoginSuccess} />
+      </>
+    );
   }
 
   const renderActiveGame = () => {
@@ -261,7 +256,6 @@ export const App: React.FC = () => {
           <Header
             onOpenDaily={() => setIsDailyOpen(true)}
             onOpenWheel={() => setIsWheelOpen(true)}
-            onSwitchToLogin={() => setIsGuest(false)}
           />
         )}
 
@@ -274,6 +268,9 @@ export const App: React.FC = () => {
           renderTabContent()
         )}
       </main>
+
+      {/* Force update modal — luôn mount, tự hiện khi phát hiện deploy mới */}
+      <ForceUpdateModal />
 
       {/* Pop-up Modals */}
       <DailyRewardModal isOpen={isDailyOpen} onClose={() => setIsDailyOpen(false)} />

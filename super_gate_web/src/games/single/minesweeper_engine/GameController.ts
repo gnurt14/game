@@ -111,14 +111,18 @@ export class GameController {
     this.notify();
   }
 
-  /** Right-click. */
+  /**
+   * Right-click. Toggles flag on any unrevealed cell — including mines.
+   *
+   * No hard cap on flag count: capping at `mineCount` accidentally blocks the
+   * player from flagging a real mine if they already mis-flagged elsewhere.
+   * The flag counter in the header is informational ("X used / N mines"), not
+   * a constraint. UI shows `flagCount > mineCount` as a hint to remove some.
+   */
   toggleFlag(row: number, col: number): void {
     if (!this.isInteractive()) return;
     const cell = this.board[row]?.[col];
     if (!cell || cell.isRevealed) return;
-
-    // Hard cap: cannot place more flags than total mines (matches MS convention).
-    if (!cell.isFlagged && this.flagCount >= this.difficulty.mineCount) return;
 
     cell.isFlagged = !cell.isFlagged;
     this.flagCount += cell.isFlagged ? 1 : -1;

@@ -1,13 +1,12 @@
 import React, { useState } from 'react';
-import { Lock, Mail, User, ShieldAlert, ArrowRight } from 'lucide-react';
+import { Lock, Mail, User, ShieldAlert } from 'lucide-react';
 import { AuthService } from '../services/authService';
 
 interface AuthScreenProps {
   onLoginSuccess: () => void;
-  onPlayAsGuest: () => void;
 }
 
-export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onPlayAsGuest }) => {
+export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -175,21 +174,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ onLoginSuccess, onPlayAs
             </p>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', color: 'var(--color-text-muted)', fontSize: '0.8rem' }}>
-            <div style={{ flex: 1, height: '1px', background: 'var(--border-glass)' }}></div>
-            <span>hoặc</span>
-            <div style={{ flex: 1, height: '1px', background: 'var(--border-glass)' }}></div>
+          <div style={{
+            marginTop: '8px',
+            padding: '10px 12px',
+            background: 'rgba(124, 111, 255, 0.06)',
+            border: '1px dashed rgba(124, 111, 255, 0.25)',
+            borderRadius: '10px',
+            fontSize: '0.78rem',
+            color: 'var(--color-text-secondary)',
+            textAlign: 'center',
+            lineHeight: 1.5,
+          }}>
+            🔒 Bắt buộc đăng nhập để chơi — tiến trình &amp; xu được lưu trên đám mây
+            để không mất khi đổi thiết bị.
           </div>
-
-          {/* Play as guest */}
-          <button 
-            onClick={onPlayAsGuest}
-            className="btn btn-secondary"
-            style={{ width: '100%', padding: '12px', borderRadius: '10px', fontSize: '0.85rem' }}
-          >
-            <span>Chơi nhanh dưới dạng Khách</span>
-            <ArrowRight size={14} />
-          </button>
         </div>
       </div>
     </div>
