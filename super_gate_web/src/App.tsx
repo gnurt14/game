@@ -232,10 +232,11 @@ export const App: React.FC = () => {
       <main className="main-content" style={{ width: (!activeGameId && !activeRoom) ? 'calc(100% - 260px)' : '100%' }}>
         {/* Top Header */}
         {!activeGameId && !activeRoom && (
-          <Header 
-            onOpenDaily={() => setIsDailyOpen(true)} 
-            onOpenWheel={() => setIsWheelOpen(true)} 
-            onOpenGacha={() => setIsGachaOpen(true)} 
+          <Header
+            onOpenDaily={() => setIsDailyOpen(true)}
+            onOpenWheel={() => setIsWheelOpen(true)}
+            onOpenGacha={() => setIsGachaOpen(true)}
+            onSwitchToLogin={() => setIsGuest(false)}
           />
         )}
 

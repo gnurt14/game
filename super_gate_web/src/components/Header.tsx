@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Coins, Flame, Zap, LogOut, Gift, HelpCircle } from 'lucide-react';
+import { Coins, Flame, Zap, LogOut, Gift, LogIn } from 'lucide-react';
 import { AuthService, PlayerModel } from '../services/authService';
 import { CoinService, CoinData } from '../services/coinService';
 
@@ -7,9 +7,10 @@ interface HeaderProps {
   onOpenDaily: () => void;
   onOpenWheel: () => void;
   onOpenGacha: () => void;
+  onSwitchToLogin?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpenGacha }) => {
+export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpenGacha, onSwitchToLogin }) => {
   const [player, setPlayer] = useState<PlayerModel | null>(AuthService.getPlayer());
   const [coinData, setCoinData] = useState<CoinData>(CoinService.getData());
   const [boosterTimeStr, setBoosterTimeStr] = useState<string>('');
@@ -175,10 +176,89 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
             </button>
           </>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
-            <HelpCircle size={16} />
-            <span>Chế độ Khách (Guest) - Đăng nhập để lưu tiến trình trực tuyến</span>
-          </div>
+          <>
+            {/* Coin balance (guest vẫn có xu lưu local) */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.05)', padding: '6px 12px', borderRadius: '10px', border: 'var(--border-glass)' }}>
+              <Coins color="#f1c40f" size={18} />
+              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#f1c40f' }}>{coinData.balance.toLocaleString()} xu</span>
+            </div>
+
+            {/* Streak Daily */}
+            <div
+              onClick={onOpenDaily}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255, 255, 255, 0.05)', padding: '6px 12px', borderRadius: '10px', border: 'var(--border-glass)', cursor: 'pointer' }}
+              className="glass-interactive"
+              title="Nhấn để điểm danh hàng ngày"
+            >
+              <Flame color="#ff6b35" size={18} className={coinData.streakDay > 0 ? 'pulse-primary' : ''} />
+              <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#ff6b35' }}>{coinData.streakDay} ngày</span>
+            </div>
+
+            {/* Daily Chest */}
+            <button
+              onClick={onOpenGacha}
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', borderRadius: '10px', height: '36px', fontSize: '0.85rem' }}
+            >
+              <Gift size={16} color="#00bcd4" />
+              <span>Rương {coinData.freeLuckyBoxes > 0 ? `(${coinData.freeLuckyBoxes})` : ''}</span>
+            </button>
+
+            {/* Daily Wheel */}
+            <button
+              onClick={onOpenWheel}
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', borderRadius: '10px', height: '36px', fontSize: '0.85rem' }}
+            >
+              <span>🎡 Vòng Quay</span>
+            </button>
+
+            {/* Guest badge + Login button */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div
+                title="Bạn đang chơi ở chế độ khách. Tiến trình lưu cục bộ trên trình duyệt."
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '5px 10px',
+                  borderRadius: '10px',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '1px dashed rgba(255,255,255,0.18)',
+                  fontSize: '0.72rem',
+                  color: 'rgba(255,255,255,0.65)',
+                  fontWeight: 700,
+                  letterSpacing: 0.5,
+                }}
+              >
+                👤 KHÁCH
+              </div>
+
+              <button
+                onClick={onSwitchToLogin}
+                title="Đăng nhập để lưu tiến trình và chơi multiplayer"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  padding: '8px 14px',
+                  borderRadius: '10px',
+                  background: 'linear-gradient(135deg, #7c6fff 0%, #a29bfe 100%)',
+                  color: 'white',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  border: 'none',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 14px rgba(124, 111, 255, 0.35)',
+                  letterSpacing: 0.3,
+                }}
+                className="glass-interactive"
+              >
+                <LogIn size={15} />
+                Đăng nhập
+              </button>
+            </div>
+          </>
         )}
       </div>
     </header>
