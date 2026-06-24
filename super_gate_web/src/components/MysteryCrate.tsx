@@ -18,6 +18,11 @@ interface TierConfig {
   jackpotReward: number;
 }
 
+// Rates đã được điều chỉnh để có house edge hợp lý:
+// Bronze EV ≈ 90 (cost 100, ~90% return)
+// Silver EV ≈ 270 (cost 300, ~90% return)
+// Gold EV ≈ 900 (cost 1000, ~90% return)
+// Player vẫn có cảm giác "thắng" thường xuyên nhưng net negative ~10% cost
 const TIERS: TierConfig[] = [
   {
     id: 'bronze',
@@ -26,9 +31,9 @@ const TIERS: TierConfig[] = [
     color: '#cd7f32',
     gradient: ['#a0522d', '#cd7f32'],
     price: 100,
-    minReward: 50,
-    maxReward: 300,
-    jackpotChance: 0.05,
+    minReward: 20,
+    maxReward: 140,
+    jackpotChance: 0.03,
     jackpotReward: 500,
   },
   {
@@ -38,10 +43,10 @@ const TIERS: TierConfig[] = [
     color: '#bdc3c7',
     gradient: ['#7f8c8d', '#bdc3c7'],
     price: 300,
-    minReward: 150,
-    maxReward: 1000,
-    jackpotChance: 0.03,
-    jackpotReward: 2500,
+    minReward: 80,
+    maxReward: 400,
+    jackpotChance: 0.02,
+    jackpotReward: 2000,
   },
   {
     id: 'gold',
@@ -50,10 +55,10 @@ const TIERS: TierConfig[] = [
     color: '#f1c40f',
     gradient: ['#e67e22', '#f1c40f'],
     price: 1000,
-    minReward: 500,
-    maxReward: 5000,
+    minReward: 300,
+    maxReward: 1400,
     jackpotChance: 0.01,
-    jackpotReward: 25000,
+    jackpotReward: 10000,
   },
 ];
 

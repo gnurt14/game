@@ -7,63 +7,72 @@ interface PlinkoProps {
 }
 
 const ROWS = 8;
-// 9 buckets at the bottom (rows + 1)
+// 9 buckets at the bottom = ROWS + 1
 const BUCKET_MULTIPLIERS = [10, 4, 2, 1, 0.5, 1, 2, 4, 10];
 
 // Layout config
-const WIDTH = 460;
-const HEIGHT = 480;
-const TOP_PADDING = 30;
-const BOTTOM_PADDING = 60;
-const PEG_RADIUS = 5;
-const BALL_RADIUS = 9;
+const WIDTH = 440;
+const HEIGHT = 520;
+const TOP_PADDING = 40;
+const BOTTOM_PADDING = 70;
+const PEG_RADIUS = 4;
+const BALL_RADIUS = 7;
+
+// Derived layout: row r has r+1 pegs.
+// Horizontal spacing between adjacent pegs in same row.
+const PEG_SPACING = WIDTH / (ROWS + 2);
+const ROW_GAP = (HEIGHT - TOP_PADDING - BOTTOM_PADDING) / (ROWS + 1);
+
+function pegPos(row: number, col: number): { x: number; y: number } {
+  // row r has r+1 pegs, centered horizontally
+  const count = row + 1;
+  const startX = WIDTH / 2 - ((count - 1) * PEG_SPACING) / 2;
+  return {
+    x: startX + col * PEG_SPACING,
+    y: TOP_PADDING + (row + 1) * ROW_GAP,
+  };
+}
+
+const ALL_PEGS = (() => {
+  const arr: { x: number; y: number }[] = [];
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c <= r; c++) {
+      arr.push(pegPos(r, c));
+    }
+  }
+  return arr;
+})();
 
 interface Ball {
   id: number;
   x: number;
   y: number;
   vy: number;
-  row: number;
-  path: number[]; // -1 left, 1 right for each row
-  bucket: number;
+  vx: number;
+  row: number;          // next peg row to interact with (0..ROWS)
+  col: number;          // col of the peg we last bounced off (0..row)
+  path: number[];       // 0 = left, 1 = right per row
+  finalBucket: number;  // pre-computed bucket index = sum(path)
+  bucket: number;       // -1 until landed
   done: boolean;
   bet: number;
   color: string;
+  landedAt: number;     // timestamp when landed (for cleanup)
 }
 
-interface PegPos { x: number; y: number; row: number; col: number; }
-
-// Pre-compute peg positions: row r has r+1 pegs
-const computePegs = (): PegPos[] => {
-  const pegs: PegPos[] = [];
-  const verticalSpan = HEIGHT - TOP_PADDING - BOTTOM_PADDING;
-  const rowGap = verticalSpan / ROWS;
-  for (let r = 0; r < ROWS; r++) {
-    const count = r + 2; // row 0 has 2 pegs
-    const rowWidth = (count - 1) * (WIDTH / (ROWS + 2));
-    const startX = (WIDTH - rowWidth) / 2;
-    const y = TOP_PADDING + (r + 1) * rowGap;
-    for (let c = 0; c < count; c++) {
-      const x = startX + c * (WIDTH / (ROWS + 2));
-      pegs.push({ x, y, row: r, col: c });
-    }
-  }
-  return pegs;
-};
-
-const PEGS = computePegs();
 const BALL_COLORS = ['#f1c40f', '#e74c3c', '#3498db', '#2ecc71', '#9b59b6'];
 
 export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
   const [balance, setBalance] = useState<number>(0);
   const [bet, setBet] = useState<number>(50);
-  const [balls, setBalls] = useState<Ball[]>([]);
   const [message, setMessage] = useState<string>('Đặt cược rồi thả bóng xem rơi vào ô nào!');
   const [recentBuckets, setRecentBuckets] = useState<number[]>([]);
+  const [activeCount, setActiveCount] = useState<number>(0);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const ballsRef = useRef<Ball[]>([]);
   const animRef = useRef<number>(0);
   const idRef = useRef<number>(0);
+  const lastTickRef = useRef<number>(0);
 
   useEffect(() => {
     setBalance(CoinService.getData().balance);
@@ -73,11 +82,6 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
       cancelAnimationFrame(animRef.current);
     };
   }, []);
-
-  // Sync state -> ref for animation loop
-  useEffect(() => {
-    ballsRef.current = balls;
-  }, [balls]);
 
   const draw = () => {
     const canvas = canvasRef.current;
@@ -89,107 +93,151 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
 
     // Background gradient
     const grad = ctx.createLinearGradient(0, 0, 0, HEIGHT);
-    grad.addColorStop(0, 'rgba(40, 20, 60, 0.4)');
-    grad.addColorStop(1, 'rgba(20, 10, 30, 0.6)');
+    grad.addColorStop(0, 'rgba(40, 20, 60, 0.6)');
+    grad.addColorStop(1, 'rgba(20, 10, 30, 0.85)');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
     // Pegs
-    ctx.fillStyle = '#bdc3c7';
-    PEGS.forEach((p) => {
+    ALL_PEGS.forEach((p) => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, PEG_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = '#d6dbdf';
+      ctx.shadowBlur = 4;
+      ctx.shadowColor = 'rgba(255,255,255,0.4)';
       ctx.fill();
+      ctx.shadowBlur = 0;
     });
 
-    // Buckets
+    // Buckets — 9 boxes spanning full bottom
     const bucketCount = BUCKET_MULTIPLIERS.length;
     const bucketWidth = WIDTH / bucketCount;
-    const bucketY = HEIGHT - BOTTOM_PADDING + 4;
+    const bucketY = HEIGHT - BOTTOM_PADDING + 6;
+    const bucketHeight = BOTTOM_PADDING - 12;
     BUCKET_MULTIPLIERS.forEach((mul, i) => {
       const x = i * bucketWidth;
-      const color = mul >= 10 ? '#e74c3c' : mul >= 4 ? '#f39c12' : mul >= 2 ? '#f1c40f' : mul >= 1 ? '#2ecc71' : '#3498db';
-      ctx.fillStyle = color;
-      ctx.fillRect(x + 2, bucketY, bucketWidth - 4, BOTTOM_PADDING - 8);
+      const color =
+        mul >= 10 ? '#e74c3c' : mul >= 4 ? '#f39c12' : mul >= 2 ? '#f1c40f' : mul >= 1 ? '#2ecc71' : '#3498db';
+      // gradient fill
+      const g = ctx.createLinearGradient(x, bucketY, x, bucketY + bucketHeight);
+      g.addColorStop(0, color);
+      g.addColorStop(1, color + 'b0');
+      ctx.fillStyle = g;
+      ctx.fillRect(x + 2, bucketY, bucketWidth - 4, bucketHeight);
+
       ctx.fillStyle = 'white';
-      ctx.font = 'bold 13px sans-serif';
+      ctx.font = 'bold 14px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(`${mul}x`, x + bucketWidth / 2, bucketY + (BOTTOM_PADDING - 8) / 2);
+      ctx.shadowBlur = 4;
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.fillText(`${mul}x`, x + bucketWidth / 2, bucketY + bucketHeight / 2);
+      ctx.shadowBlur = 0;
     });
 
     // Balls
     ballsRef.current.forEach((b) => {
+      // glow
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, BALL_RADIUS + 3, 0, Math.PI * 2);
+      ctx.fillStyle = b.color + '40';
+      ctx.fill();
+      // body
       ctx.beginPath();
       ctx.arc(b.x, b.y, BALL_RADIUS, 0, Math.PI * 2);
       ctx.fillStyle = b.color;
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 14;
       ctx.shadowColor = b.color;
       ctx.fill();
       ctx.shadowBlur = 0;
+      // highlight
+      ctx.beginPath();
+      ctx.arc(b.x - 2, b.y - 2, BALL_RADIUS / 3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.6)';
+      ctx.fill();
     });
   };
 
-  const stepPhysics = () => {
-    let anyAlive = false;
-    const verticalSpan = HEIGHT - TOP_PADDING - BOTTOM_PADDING;
-    const rowGap = verticalSpan / ROWS;
-    const bucketCount = BUCKET_MULTIPLIERS.length;
-    const bucketWidth = WIDTH / bucketCount;
+  const stepPhysics = (now: number) => {
+    if (lastTickRef.current === 0) lastTickRef.current = now;
+    const dt = Math.min(32, now - lastTickRef.current) / 16; // normalize to 60fps frames
+    lastTickRef.current = now;
 
-    const updated = ballsRef.current.map((b) => {
-      if (b.done) return b;
-      anyAlive = true;
+    let anyMoving = false;
+    const bucketWidth = WIDTH / BUCKET_MULTIPLIERS.length;
+    const bucketBottomY = HEIGHT - BOTTOM_PADDING / 2 - 4;
 
-      // accelerate
-      b.vy += 0.18;
-      b.y += b.vy;
+    for (const b of ballsRef.current) {
+      if (b.done) continue;
 
-      // If we just crossed a peg row, deflect left/right
-      const nextPegRow = b.row;
-      if (nextPegRow < ROWS) {
-        const targetY = TOP_PADDING + (nextPegRow + 1) * rowGap;
-        if (b.y >= targetY) {
-          const dir = b.path[nextPegRow];
-          // shift horizontally by half peg spacing
-          const shift = (WIDTH / (ROWS + 2)) / 2;
-          b.x += dir * shift;
-          b.y = targetY + 1;
-          b.vy = Math.min(b.vy, 3.5); // dampen
-          b.row = nextPegRow + 1;
+      // Gravity
+      b.vy = Math.min(b.vy + 0.22 * dt, 6.5);
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      // Friction on vx
+      b.vx *= 0.92;
+
+      // Check collision with next peg row
+      if (b.row < ROWS) {
+        const targetPeg = pegPos(b.row, b.col);
+        // Ball crosses the peg row → deflect
+        if (b.y >= targetPeg.y - 1) {
+          const dir = b.path[b.row] === 1 ? 1 : -1;
+          // Set horizontal velocity to glide to next peg over a few frames
+          b.vx = (dir * PEG_SPACING) / 8; // covers half-spacing in ~4 frames
+          // Snap y above next row to avoid sliding through pegs visually
+          b.y = targetPeg.y + 2;
+          // Reset vy a bit (bounce)
+          b.vy = Math.max(1.0, b.vy * 0.55);
+          // Move to next row, col follows path
+          b.row += 1;
+          b.col = b.col + (b.path[b.row - 1] === 1 ? 1 : 0);
         }
       }
 
-      // Reached bucket zone
-      if (b.y >= HEIGHT - BOTTOM_PADDING) {
+      // Ball reaches bucket zone
+      if (b.y >= HEIGHT - BOTTOM_PADDING + 4) {
         b.done = true;
-        // Determine bucket index by x
-        let bucketIdx = Math.floor(b.x / bucketWidth);
-        bucketIdx = Math.max(0, Math.min(bucketCount - 1, bucketIdx));
-        // Snap x to bucket center
-        b.x = bucketIdx * bucketWidth + bucketWidth / 2;
-        b.y = HEIGHT - BOTTOM_PADDING / 2 - 4;
-        b.bucket = bucketIdx;
-        onBallLanded(b);
+        b.bucket = b.finalBucket;
+        // Snap to bucket center for visual consistency
+        b.x = b.finalBucket * bucketWidth + bucketWidth / 2;
+        b.y = bucketBottomY;
+        b.vx = 0;
+        b.vy = 0;
+        b.landedAt = now;
+        // schedule reward outside the loop to avoid mutating during iteration
+        queueMicrotask(() => onBallLanded(b));
+      } else {
+        anyMoving = true;
       }
 
-      // Clamp x
-      b.x = Math.max(BALL_RADIUS, Math.min(WIDTH - BALL_RADIUS, b.x));
-      return b;
-    });
+      // Soft clamp x (only when ball is past the peg field)
+      const minX = BALL_RADIUS;
+      const maxX = WIDTH - BALL_RADIUS;
+      if (b.x < minX) {
+        b.x = minX;
+        b.vx = Math.abs(b.vx) * 0.4;
+      } else if (b.x > maxX) {
+        b.x = maxX;
+        b.vx = -Math.abs(b.vx) * 0.4;
+      }
+    }
 
-    ballsRef.current = updated;
+    // Cleanup balls that have been settled > 1500ms
+    const cleanupBefore = now - 1500;
+    const before = ballsRef.current.length;
+    ballsRef.current = ballsRef.current.filter((b) => !b.done || b.landedAt > cleanupBefore);
+    if (ballsRef.current.length !== before) {
+      setActiveCount(ballsRef.current.filter((b) => !b.done).length);
+    }
+
     draw();
 
-    if (anyAlive) {
+    if (anyMoving || ballsRef.current.some((b) => b.done)) {
       animRef.current = requestAnimationFrame(stepPhysics);
     } else {
-      // schedule cleanup of done balls
-      setTimeout(() => {
-        setBalls((prev) => prev.filter((b) => !b.done));
-        ballsRef.current = ballsRef.current.filter((b) => !b.done);
-        draw();
-      }, 1500);
+      lastTickRef.current = 0;
     }
   };
 
@@ -200,76 +248,119 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
       await CoinService.earnCoins(win);
     }
     const net = win - b.bet;
-    setMessage(`🎯 Ô ${mul}x — ${net >= 0 ? `+${net}` : net} xu`);
-    setRecentBuckets((r) => [b.bucket, ...r].slice(0, 10));
+    setMessage(`🎯 Ô ${mul}x — ${net >= 0 ? `+${net}` : net} xu (cược ${b.bet})`);
+    setRecentBuckets((r) => [b.bucket, ...r].slice(0, 12));
+    setActiveCount(ballsRef.current.filter((x) => !x.done).length);
     if (mul >= 10) {
-      confetti({ particleCount: 80, spread: 70, origin: { x: 0.5, y: 0.7 } });
+      confetti({ particleCount: 100, spread: 80, origin: { x: 0.5, y: 0.7 } });
     } else if (mul >= 4) {
-      confetti({ particleCount: 30, spread: 50, origin: { y: 0.7 } });
+      confetti({ particleCount: 40, spread: 50, origin: { y: 0.7 } });
+    } else if (mul >= 2) {
+      confetti({ particleCount: 18, spread: 30, origin: { y: 0.7 } });
     }
     await CoinService.recordGamePlayed('Plinko');
   };
 
   const dropBall = async () => {
-    if (ballsRef.current.filter((b) => !b.done).length >= 5) {
-      setMessage('⚠️ Tối đa 5 bóng đang rơi.');
+    const active = ballsRef.current.filter((b) => !b.done).length;
+    if (active >= 5) {
+      setMessage('⚠️ Tối đa 5 bóng đang rơi cùng lúc.');
       return;
     }
     if (bet > balance) {
-      alert('❌ Không đủ xu cược!');
+      setMessage('❌ Không đủ xu cược!');
       return;
     }
     const ok = await CoinService.spendCoins(bet);
     if (!ok) return;
 
-    // pre-compute random path (-1 / 1) for each row
+    // Pre-compute random path (0=left, 1=right) for each row
     const path: number[] = [];
+    let bucketIdx = 0;
     for (let r = 0; r < ROWS; r++) {
-      path.push(Math.random() < 0.5 ? -1 : 1);
+      const bit = Math.random() < 0.5 ? 0 : 1;
+      path.push(bit);
+      bucketIdx += bit;
     }
 
+    const topPeg = pegPos(0, 0); // top peg
     const newBall: Ball = {
       id: ++idRef.current,
-      x: WIDTH / 2 + (Math.random() - 0.5) * 6,
-      y: 5,
-      vy: 1.5,
+      x: topPeg.x + (Math.random() - 0.5) * 4,
+      y: TOP_PADDING - 10,
+      vy: 1.0,
+      vx: 0,
       row: 0,
+      col: 0,
       path,
+      finalBucket: bucketIdx,
       bucket: -1,
       done: false,
       bet,
       color: BALL_COLORS[idRef.current % BALL_COLORS.length],
+      landedAt: 0,
     };
 
-    const next = [...ballsRef.current, newBall];
-    ballsRef.current = next;
-    setBalls(next);
+    ballsRef.current = [...ballsRef.current, newBall];
+    setActiveCount(ballsRef.current.filter((b) => !b.done).length);
+    setMessage(`🎲 Đang rơi… cược ${bet} xu`);
 
     // start animation if not running
-    cancelAnimationFrame(animRef.current);
-    animRef.current = requestAnimationFrame(stepPhysics);
+    if (lastTickRef.current === 0) {
+      animRef.current = requestAnimationFrame(stepPhysics);
+    }
   };
 
   // Initial draw
   useEffect(() => {
     draw();
-
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <div className="glass fullscreen-game-container" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div
+      className="glass fullscreen-game-container"
+      style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+    >
       {/* Header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: 'var(--border-glass)', paddingBottom: '14px', marginBottom: '12px', flexShrink: 0 }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          borderBottom: 'var(--border-glass)',
+          paddingBottom: '12px',
+          marginBottom: '10px',
+          flexShrink: 0,
+        }}
+      >
         <div>
           <h2 style={{ fontSize: '1.4rem', fontWeight: 800 }}>🎯 Plinko</h2>
           <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)' }}>
-            Số dư: <strong style={{ color: '#f1c40f' }}>🪙 {balance} xu</strong>
+            Số dư:{' '}
+            <strong style={{ color: '#f1c40f' }}>🪙 {balance.toLocaleString('vi-VN')} xu</strong>
+            {activeCount > 0 && (
+              <span style={{ marginLeft: 12, color: '#7c6fff' }}>● {activeCount} bóng đang rơi</span>
+            )}
           </span>
         </div>
-        <button onClick={onClose} className="btn btn-danger">Quay lại</button>
+        <button onClick={onClose} className="btn btn-danger">
+          Quay lại
+        </button>
       </div>
 
-      <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', overflowY: 'auto', paddingBottom: '12px', minHeight: 0 }}>
+      <div
+        style={{
+          flexGrow: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: '10px',
+          overflowY: 'auto',
+          paddingBottom: '12px',
+          minHeight: 0,
+        }}
+      >
         <canvas
           ref={canvasRef}
           width={WIDTH}
@@ -286,18 +377,40 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
           }}
         />
 
-        <div style={{ fontSize: '1rem', fontWeight: 800, textAlign: 'center', minHeight: '24px', color: 'var(--color-text-secondary)' }}>
+        <div
+          style={{
+            fontSize: '0.95rem',
+            fontWeight: 700,
+            textAlign: 'center',
+            minHeight: '22px',
+            color: 'var(--color-text-secondary)',
+          }}
+        >
           {message}
         </div>
 
         {/* Recent landings */}
         {recentBuckets.length > 0 && (
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
+          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', justifyContent: 'center' }}>
+            <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', alignSelf: 'center' }}>
+              Gần đây:
+            </span>
             {recentBuckets.map((b, i) => {
               const mul = BUCKET_MULTIPLIERS[b];
-              const color = mul >= 10 ? '#e74c3c' : mul >= 4 ? '#f39c12' : mul >= 2 ? '#f1c40f' : mul >= 1 ? '#2ecc71' : '#3498db';
+              const color =
+                mul >= 10 ? '#e74c3c' : mul >= 4 ? '#f39c12' : mul >= 2 ? '#f1c40f' : mul >= 1 ? '#2ecc71' : '#3498db';
               return (
-                <span key={i} style={{ padding: '3px 9px', borderRadius: '10px', background: color, color: 'white', fontWeight: 800, fontSize: '0.7rem' }}>
+                <span
+                  key={i}
+                  style={{
+                    padding: '3px 9px',
+                    borderRadius: '10px',
+                    background: color,
+                    color: 'white',
+                    fontWeight: 800,
+                    fontSize: '0.7rem',
+                  }}
+                >
                   {mul}x
                 </span>
               );
@@ -306,7 +419,17 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
         )}
 
         {/* Controls */}
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap', justifyContent: 'center', width: '100%', maxWidth: WIDTH }}>
+        <div
+          style={{
+            display: 'flex',
+            gap: '10px',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+            width: '100%',
+            maxWidth: WIDTH,
+          }}
+        >
           <span style={{ fontSize: '0.85rem' }}>Cược:</span>
           {[10, 50, 100, 500].map((v) => (
             <button
@@ -330,7 +453,13 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
             onClick={dropBall}
             disabled={bet > balance}
             className="btn btn-primary"
-            style={{ height: '44px', padding: '0 24px', fontWeight: 800, background: 'linear-gradient(135deg, #8e44ad, #3498db)' }}
+            style={{
+              height: '44px',
+              padding: '0 24px',
+              fontWeight: 800,
+              background: 'linear-gradient(135deg, #8e44ad, #3498db)',
+              opacity: bet > balance ? 0.5 : 1,
+            }}
           >
             ⬇ THẢ BÓNG ({bet} xu)
           </button>
