@@ -783,7 +783,16 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                     )}
                   </div>
                   <span style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', marginTop: '2px', display: 'block' }}>
-                    {action === 'stand' ? '⏹ Stand' : isBusted ? '💥 Bust!' : isCurrentTurn ? '⚡ Đang suy nghĩ...' : 'Đợi...'}
+                    {hand.length >= 5 && handVal <= 21
+                      ? <span style={{ color: '#f1c40f', fontWeight: 900, letterSpacing: '1px' }}>🌟 NGŨ LINH</span>
+                      : action === 'ngulinh'
+                        ? <span style={{ color: '#f1c40f', fontWeight: 900, letterSpacing: '1px' }}>🌟 NGŨ LINH</span>
+                        : action === 'blackjack'
+                          ? <span style={{ color: '#a29bfe', fontWeight: 900 }}>✨ BLACKJACK</span>
+                          : action === 'stand' ? '⏹ Stand'
+                          : isBusted || action === 'bust' ? '💥 Bust!'
+                          : isCurrentTurn ? '⚡ Đang suy nghĩ...'
+                          : 'Đợi...'}
                   </span>
                 </div>
 
@@ -801,7 +810,10 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
           <div style={{ display: 'flex', gap: '10px', width: '100%', marginTop: '10px' }}>
             <button
               onClick={handleXiJackHit}
-              disabled={xjHandValue(gs.player_hands?.[myId || ''] || []) >= 21}
+              disabled={(() => {
+                const h = gs.player_hands?.[myId || ''] || [];
+                return xjHandValue(h) >= 21 || h.length >= 5;
+              })()}
               className="btn btn-primary"
               style={{ flex: 1, height: '44px', fontWeight: 800 }}
             >
@@ -1156,7 +1168,7 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
               ? 'Tỷ lệ: Cược 1 trúng linh vật x1 cược, trúng 2 x2, trúng 3 x3 cược.'
               : currentRoom.gameType === 'do_den'
                 ? 'Tỷ lệ: Đoán đúng màu lá bài thưởng x1 cược.'
-                : 'Luật: Dưới 15 điểm bắt buộc rút (Hit). Đạt Xì Jack (Blackjack) hoặc lớn hơn cái để nhận x2.'}
+                : 'Luật: Dưới 15 điểm bắt buộc rút (Hit). Xì Jack (2 lá =21) ăn x1.5. 🌟 Ngũ Linh (5 lá ≤21) thắng tuyệt đối ăn x2.'}
           </span>
         </div>
 

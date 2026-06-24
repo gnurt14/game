@@ -26,7 +26,7 @@ export interface RoomPlayer {
   betChoice: string | null;
   resultDelta: number;
   totalDelta: number;
-  xiJackResult: 'win' | 'lose' | 'push' | 'blackjack' | null;
+  xiJackResult: 'win' | 'lose' | 'push' | 'blackjack' | 'ngulinh' | null;
   isReady: boolean;
   joinedAt: string;
 }
@@ -694,8 +694,12 @@ export class RoomService {
         if (hand.length === expected - 1 && deckPtr < deck.length) {
           const newCard = deck[deckPtr++];
           playerHands[uid] = [...hand, newCard];
-          if (xjHandValue(playerHands[uid]) > 21) {
+          const newVal = xjHandValue(playerHands[uid]);
+          if (newVal > 21) {
             playerActions[uid] = 'bust';
+          } else if (playerHands[uid].length >= 5 && newVal <= 21) {
+            // Ngũ Linh: 5 lá tổng ≤21 → ép stand (player win tuyệt đối, xử lý ở settleXiJack)
+            playerActions[uid] = 'ngulinh';
           }
           changed = true;
         }
@@ -756,10 +760,15 @@ export class RoomService {
     const myVal = xjHandValue(myHand);
     const dVal = xjHandValue(dealerFinal);
 
-    let result: 'win' | 'lose' | 'push' | 'blackjack' = 'lose';
-    if (myAction === 'bust') {
+    let result: 'win' | 'lose' | 'push' | 'blackjack' | 'ngulinh' = 'lose';
+    // Ưu tiên xét theo thứ tự: bust → ngulinh (5 lá ≤21) → blackjack (2 lá =21) → so với dealer.
+    // Lưu ý multi-player: mỗi player settle độc lập so với dealer (giống casino thật).
+    // Không so giữa các Ngũ Linh với nhau — ai có Ngũ Linh đều auto win x2.
+    if (myAction === 'bust' || myVal > 21) {
       result = 'lose';
-    } else if (myAction === 'blackjack') {
+    } else if (myHand.length === 5 && myVal <= 21) {
+      result = 'ngulinh';
+    } else if (myAction === 'blackjack' || (myHand.length === 2 && myVal === 21)) {
       result = 'blackjack';
     } else if (dVal > 21 || myVal > dVal) {
       result = 'win';
@@ -770,7 +779,8 @@ export class RoomService {
     }
 
     let delta = 0;
-    if (result === 'blackjack') delta = Math.round(me.betAmount * 1.5);
+    if (result === 'ngulinh') delta = me.betAmount * 2; // x2 cược → payout x3 (gốc + lời 2x)
+    else if (result === 'blackjack') delta = Math.round(me.betAmount * 1.5);
     else if (result === 'win') delta = me.betAmount;
     else if (result === 'push') delta = 0;
     else delta = -me.betAmount;

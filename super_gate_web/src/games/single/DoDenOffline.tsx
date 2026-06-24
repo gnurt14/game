@@ -36,6 +36,16 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
   const [message, setMessage] = useState<string>('🔴 Đặt cược vào Đỏ hoặc Đen ⚫');
   const [winDelta, setWinDelta] = useState<number | null>(null);
 
+  // Double-up state
+  // phase: 'idle' = no modal; 'offer' = đang hỏi gấp đôi; 'choosing' = chờ chọn màu; 'lost' = vừa mất tất cả
+  const [doublePhase, setDoublePhase] = useState<'idle' | 'offer' | 'choosing' | 'lost'>('idle');
+  const [doubleWin, setDoubleWin] = useState<number>(0); // số xu hiện đang treo (chưa vào ví)
+  const [doubleCount, setDoubleCount] = useState<number>(0); // số lần đã gấp đôi (max 5)
+  const [doubleCard, setDoubleCard] = useState<Card | null>(null); // lá bài reveal của double-up
+  const [doubleFlipping, setDoubleFlipping] = useState<boolean>(false);
+
+  const MAX_DOUBLE_STEPS = 5;
+
   useEffect(() => {
     setBalance(CoinService.getData().balance);
     const unsub = CoinService.subscribe((data) => {
@@ -130,13 +140,18 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
     const isWin = (capturedChoice === 'red' && isRed) || (capturedChoice === 'black' && !isRed);
 
     if (isWin) {
-      const winPayout = capturedAmount * 2;
+      // KHÔNG cộng xu ngay — treo trong currentWin và mời double-up.
+      const winPayout = capturedAmount * 2; // gốc + lời 1x
       const netWin = capturedAmount;
-      await CoinService.earnCoins(winPayout);
       setWinDelta(netWin);
-      setMessage(`🎉 Thắng cược! Nhận +${netWin} xu thưởng!`);
+      setMessage(`🎉 Thắng cược! Đang treo ${winPayout} xu — gấp đôi hay nhận?`);
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
+      // Mở modal double-up
+      setDoubleWin(winPayout);
+      setDoubleCount(0);
+      setDoubleCard(null);
+      setDoublePhase('offer');
     } else {
       setWinDelta(-capturedAmount);
       setMessage(`💸 Thua cược. Lá bài màu ${isRed ? 'Đỏ 🔴' : 'Đen ⚫'}!`);
@@ -146,6 +161,79 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
     setBetAmount(0);
 
     await CoinService.recordGamePlayed('Đỏ Đen Offline');
+  };
+
+  // ── Double-up handlers ─────────────────────────────────────────────────────
+
+  const handleClaimWin = async () => {
+    if (doubleWin > 0) {
+      await CoinService.earnCoins(doubleWin);
+    }
+    setDoubleWin(0);
+    setDoubleCount(0);
+    setDoubleCard(null);
+    setDoublePhase('idle');
+    setMessage(`💰 Đã nhận ${doubleWin} xu vào ví!`);
+  };
+
+  const handleEnterDoubleUp = () => {
+    setDoublePhase('choosing');
+    setDoubleCard(null);
+  };
+
+  const handleDoublePick = (pick: 'red' | 'black') => {
+    if (doubleFlipping) return;
+    setDoubleFlipping(true);
+    setDoubleCard(null);
+
+    // Random reveal sau 900ms để có chút suspense
+    setTimeout(() => {
+      const randomSuit = SUITS[Math.floor(Math.random() * SUITS.length)];
+      const randomRank = RANKS[Math.floor(Math.random() * RANKS.length)];
+      const isRed = randomSuit === 'hearts' || randomSuit === 'diamonds';
+      const card: Card = { rank: randomRank, suit: randomSuit, isRed };
+      setDoubleCard(card);
+      setDoubleFlipping(false);
+
+      const isWin = (pick === 'red' && isRed) || (pick === 'black' && !isRed);
+      if (isWin) {
+        const newWin = doubleWin * 2;
+        const newCount = doubleCount + 1;
+        setDoubleWin(newWin);
+        setDoubleCount(newCount);
+        confetti({ particleCount: 60, spread: 70, origin: { y: 0.6 } });
+        if (newCount >= MAX_DOUBLE_STEPS) {
+          // Đã chạm trần — auto claim
+          setMessage(`🏆 Tối đa ${MAX_DOUBLE_STEPS} lần gấp đôi! Tự động nhận thưởng.`);
+          setTimeout(async () => {
+            await CoinService.earnCoins(newWin);
+            setMessage(`🏆 Đã nhận ${newWin} xu (max x${1 << MAX_DOUBLE_STEPS})!`);
+            setDoubleWin(0);
+            setDoubleCount(0);
+            setDoubleCard(null);
+            setDoublePhase('idle');
+          }, 1600);
+        } else {
+          // Quay lại offer với mức mới
+          setTimeout(() => {
+            setDoublePhase('offer');
+            setDoubleCard(null);
+          }, 1400);
+        }
+      } else {
+        // Thua → mất tất cả
+        setDoubleWin(0);
+        setDoublePhase('lost');
+      }
+    }, 900);
+  };
+
+  const handleDismissLost = () => {
+    setDoublePhase('idle');
+    setDoubleWin(0);
+    setDoubleCount(0);
+    setDoubleCard(null);
+    setMessage('💸 Đã mất phần thưởng do gấp đôi. Đặt cược ván mới?');
   };
 
   return (
@@ -397,9 +485,233 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
         </div>
 
         <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-          💡 Chọn chip cược rồi nhấn ĐỎ hoặc ĐEN để cược màu lá bài sẽ rút ra. Thắng cược nhận x1 tiền thưởng cược (tỷ lệ 1 ăn 1).
+          💡 Chọn chip cược rồi nhấn ĐỎ hoặc ĐEN để cược màu lá bài sẽ rút ra. Thắng cược nhận x1 tiền thưởng. Có thể 🎰 Gấp Đôi sau khi thắng (50/50, max x32).
         </div>
       </div>
+
+      {/* ───────────────────────────── Double-up Modal ───────────────────────────── */}
+      {doublePhase !== 'idle' && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(7, 7, 26, 0.85)',
+            backdropFilter: 'blur(6px)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #1a1138 0%, #0d0820 100%)',
+              border: '1.5px solid rgba(241, 196, 15, 0.35)',
+              borderRadius: '18px',
+              padding: '26px 28px',
+              maxWidth: '420px',
+              width: '100%',
+              textAlign: 'center',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.5), 0 0 30px rgba(241,196,15,0.18)',
+            }}
+          >
+            {doublePhase === 'offer' && (
+              <>
+                <div style={{ fontSize: '3rem', marginBottom: '4px' }}>🎰</div>
+                <h2 style={{ fontSize: '1.4rem', fontWeight: 900, color: 'white', margin: 0, letterSpacing: 1 }}>
+                  Gấp đôi tiền thưởng?
+                </h2>
+                <p style={{ fontSize: '0.82rem', color: 'rgba(255,255,255,0.65)', marginTop: '6px', marginBottom: '18px' }}>
+                  Mini-round 50/50: chọn đúng màu → gấp đôi, sai → mất tất cả.
+                </p>
+
+                <div style={{
+                  background: 'rgba(241,196,15,0.08)',
+                  border: '1px solid rgba(241,196,15,0.25)',
+                  borderRadius: '12px',
+                  padding: '14px',
+                  marginBottom: '16px',
+                }}>
+                  <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.55)', letterSpacing: 1, fontWeight: 700 }}>
+                    HIỆN ĐANG TREO
+                  </div>
+                  <div style={{ fontSize: '1.8rem', fontWeight: 900, color: '#f1c40f', marginTop: '2px', lineHeight: 1.1 }}>
+                    🪙 {doubleWin} xu
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.7)', marginTop: '6px', fontWeight: 600 }}>
+                    Nếu gấp đôi tiếp: <strong style={{ color: '#2ecc71' }}>🪙 {doubleWin * 2} xu</strong>
+                    {doubleCount > 0 && (
+                      <span style={{ display: 'block', fontSize: '0.68rem', color: 'rgba(255,255,255,0.4)', marginTop: '4px' }}>
+                        (đã gấp đôi {doubleCount}/{MAX_DOUBLE_STEPS} lần)
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px', flexDirection: 'column' }}>
+                  <button
+                    onClick={handleEnterDoubleUp}
+                    style={{
+                      padding: '12px',
+                      fontSize: '0.95rem',
+                      fontWeight: 900,
+                      background: 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      boxShadow: '0 6px 18px rgba(231, 76, 60, 0.4)',
+                    }}
+                  >
+                    🎲 Gấp đôi (50/50)
+                  </button>
+
+                  <button
+                    onClick={handleClaimWin}
+                    style={{
+                      padding: '12px',
+                      fontSize: '0.95rem',
+                      fontWeight: 900,
+                      background: 'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)',
+                      color: '#1a1138',
+                      border: 'none',
+                      borderRadius: '10px',
+                      cursor: 'pointer',
+                      boxShadow: '0 6px 18px rgba(241, 196, 15, 0.35)',
+                    }}
+                  >
+                    💰 Nhận thưởng ({doubleWin} xu)
+                  </button>
+                </div>
+              </>
+            )}
+
+            {doublePhase === 'choosing' && (
+              <>
+                <div style={{ fontSize: '2.5rem', marginBottom: '4px' }}>🎲</div>
+                <h2 style={{ fontSize: '1.3rem', fontWeight: 900, color: 'white', margin: 0 }}>
+                  Chọn màu lá bài tiếp theo
+                </h2>
+                <p style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.6)', marginTop: '6px', marginBottom: '18px' }}>
+                  Treo: <strong style={{ color: '#f1c40f' }}>🪙 {doubleWin}</strong> → đúng gấp đôi, sai mất hết.
+                </p>
+
+                <div style={{
+                  height: '120px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'rgba(0,0,0,0.3)',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  border: 'var(--border-glass)',
+                }}>
+                  {doubleFlipping ? (
+                    <div style={{ fontSize: '3rem', animation: 'dd-spin-fast 0.18s linear infinite' }}>🃏</div>
+                  ) : doubleCard ? (
+                    <div style={{
+                      width: '70px',
+                      height: '100px',
+                      background: 'white',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      justifyContent: 'space-between',
+                      padding: '8px',
+                      color: doubleCard.isRed ? '#e74c3c' : '#2d3436',
+                      fontWeight: 800,
+                      fontSize: '1.1rem',
+                      border: `3px solid ${doubleCard.isRed ? '#e74c3c' : '#2d3436'}`,
+                      boxShadow: '0 8px 20px rgba(0,0,0,0.5)',
+                      animation: 'dd-flip-reveal 0.5s ease-out',
+                    }}>
+                      <div style={{ alignSelf: 'flex-start', fontSize: '0.95rem' }}>{doubleCard.rank}</div>
+                      <div style={{ fontSize: '2rem', alignSelf: 'center', lineHeight: 1 }}>
+                        {doubleCard.suit === 'hearts' ? '♥' : doubleCard.suit === 'diamonds' ? '♦' : doubleCard.suit === 'clubs' ? '♣' : '♠'}
+                      </div>
+                      <div style={{ alignSelf: 'flex-end', fontSize: '0.95rem' }}>{doubleCard.rank}</div>
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)' }}>Chọn 🔴 Đỏ hoặc ⚫ Đen</span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    onClick={() => handleDoublePick('red')}
+                    disabled={doubleFlipping || doubleCard !== null}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      fontSize: '1rem',
+                      fontWeight: 900,
+                      background: 'linear-gradient(135deg, #e74c3c 0%, #c0392b 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '10px',
+                      cursor: (doubleFlipping || doubleCard !== null) ? 'not-allowed' : 'pointer',
+                      opacity: (doubleFlipping || doubleCard !== null) ? 0.5 : 1,
+                      boxShadow: '0 6px 18px rgba(231, 76, 60, 0.4)',
+                    }}
+                  >
+                    🔴 Đỏ
+                  </button>
+                  <button
+                    onClick={() => handleDoublePick('black')}
+                    disabled={doubleFlipping || doubleCard !== null}
+                    style={{
+                      flex: 1,
+                      padding: '14px',
+                      fontSize: '1rem',
+                      fontWeight: 900,
+                      background: 'linear-gradient(135deg, #34495e 0%, #2d3436 100%)',
+                      color: 'white',
+                      border: '1px solid rgba(255,255,255,0.15)',
+                      borderRadius: '10px',
+                      cursor: (doubleFlipping || doubleCard !== null) ? 'not-allowed' : 'pointer',
+                      opacity: (doubleFlipping || doubleCard !== null) ? 0.5 : 1,
+                      boxShadow: '0 6px 18px rgba(0,0,0,0.4)',
+                    }}
+                  >
+                    ⚫ Đen
+                  </button>
+                </div>
+              </>
+            )}
+
+            {doublePhase === 'lost' && (
+              <>
+                <div style={{ fontSize: '3rem', marginBottom: '4px' }}>💀</div>
+                <h2 style={{ fontSize: '1.5rem', fontWeight: 900, color: '#e74c3c', margin: 0, letterSpacing: 1 }}>
+                  Đã mất tất cả!
+                </h2>
+                <p style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.7)', marginTop: '8px', marginBottom: '20px' }}>
+                  Bạn đã chọn sai màu. Tiền thưởng đã bốc hơi 💨
+                </p>
+
+                <button
+                  onClick={handleDismissLost}
+                  style={{
+                    width: '100%',
+                    padding: '12px',
+                    fontSize: '0.95rem',
+                    fontWeight: 900,
+                    background: 'linear-gradient(135deg, #7c6fff 0%, #a29bfe 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '10px',
+                    cursor: 'pointer',
+                    boxShadow: '0 6px 18px rgba(124, 111, 255, 0.35)',
+                  }}
+                >
+                  🔄 Thử lại từ đầu
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

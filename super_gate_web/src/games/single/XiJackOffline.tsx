@@ -120,6 +120,8 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
 
   const handleHit = () => {
     if (phase !== 'player_turn') return;
+    // Đã đạt 5 lá → ép stand (Ngũ Linh hoặc đã bust trước đó)
+    if (playerHand.length >= 5) return;
 
     const newDeck = [...deck];
     const drawn = newDeck.pop()!;
@@ -136,6 +138,13 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       setTimeout(() => setBustShake(false), 600);
       setMessage(`💥 Quá 21 điểm (${nextVal}đ)! Bạn bị BUST và thua cược.`);
       CoinService.recordGamePlayed('Xì Jack Offline');
+    } else if (nextHand.length === 5) {
+      // 5 lá ≤21 = Ngũ Linh → ép stand, qua dealer turn để hoàn tất ván.
+      setMessage(`🌟 Bạn đã đạt Ngũ Linh (${nextVal}đ với 5 lá)! Đang xử lý...`);
+      setPhase('dealer_turn');
+      setTimeout(() => {
+        playDealerTurn(true);
+      }, 800);
     } else {
       setMessage(`Hand của bạn: ${nextVal} điểm. Rút thêm hay Dừng?`);
     }
@@ -151,7 +160,7 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
     }, 800);
   };
 
-  const playDealerTurn = async () => {
+  const playDealerTurn = async (forceNguLinh: boolean = false) => {
     const currentDeck = [...deck];
     const currentDHand = [...dealerHand];
     let dVal = xjHandValue(currentDHand);
@@ -168,6 +177,20 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
 
     const pVal = xjHandValue(playerHand);
     const capturedBet = betAmount;
+
+    // Ưu tiên Ngũ Linh: thắng tuyệt đối x2 cược (lời = 2x bet)
+    if (forceNguLinh) {
+      const profit = capturedBet * 2;
+      const winPayout = capturedBet + profit; // gốc + lời 2x
+      await CoinService.earnCoins(winPayout);
+      setWinDelta(profit);
+      setMessage(`🌟 NGŨ LINH! 5 lá đạt ${pVal}đ — bạn thắng tuyệt đối +${profit} xu!`);
+      confetti({ particleCount: 120, spread: 100, origin: { x: 0.3, y: 0.6 } });
+      setTimeout(() => confetti({ particleCount: 100, spread: 80, origin: { x: 0.7, y: 0.6 } }), 200);
+      setTimeout(() => confetti({ particleCount: 80, spread: 120, origin: { x: 0.5, y: 0.3 } }), 400);
+      await CoinService.recordGamePlayed('Xì Jack Offline');
+      return;
+    }
 
     if (dVal > 21) {
       const winPayout = capturedBet * 2;
@@ -326,6 +349,33 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
             <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#3498db', textTransform: 'uppercase', letterSpacing: '1px' }}>
               Bài của bạn {playerHand.length > 0 ? `(${xjHandValue(playerHand)}đ)` : ''}
             </span>
+            {/* Ngũ Linh / Blackjack badge */}
+            {(() => {
+              const pv = xjHandValue(playerHand);
+              const isNL = playerHand.length === 5 && pv <= 21;
+              const isBJ = !isNL && playerHand.length === 2 && pv === 21;
+              if (!isNL && !isBJ) return null;
+              return (
+                <div style={{
+                  background: isNL
+                    ? 'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)'
+                    : 'linear-gradient(135deg, #7c6fff 0%, #a29bfe 100%)',
+                  color: isNL ? '#1a1138' : 'white',
+                  padding: '4px 14px',
+                  borderRadius: '14px',
+                  fontWeight: 900,
+                  fontSize: '0.85rem',
+                  letterSpacing: '1.5px',
+                  boxShadow: isNL
+                    ? '0 0 20px rgba(241,196,15,0.6), 0 4px 10px rgba(0,0,0,0.3)'
+                    : '0 4px 10px rgba(0,0,0,0.3)',
+                  border: '2px solid white',
+                  animation: isNL ? 'xj-win-pulse 1.4s infinite' : 'none',
+                }}>
+                  {isNL ? '🌟 NGŨ LINH' : '✨ BLACKJACK'}
+                </div>
+              );
+            })()}
             <div style={{
               display: 'flex',
               gap: '8px',
@@ -430,6 +480,7 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
           <div style={{ display: 'flex', gap: '12px', width: '100%', maxWidth: '440px' }}>
             <button
               onClick={handleHit}
+              disabled={playerHand.length >= 5}
               className="btn btn-primary"
               style={{ flex: 1, height: '46px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
@@ -465,7 +516,7 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
         )}
 
         <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-          💡 Luật chơi: Rút bài đạt điểm gần 21 nhất nhưng không vượt quá 21. Nhà cái bắt buộc rút nếu dưới 17 điểm. Xì Jack (Blackjack) ăn 1.5 lần cược gốc.
+          💡 Luật chơi: Rút bài đạt điểm gần 21 nhất nhưng không vượt quá 21. Nhà cái bắt buộc rút nếu dưới 17 điểm. Xì Jack (Blackjack) ăn 1.5x cược gốc. 🌟 Ngũ Linh (5 lá ≤21) thắng tuyệt đối, ăn x2 cược.
         </div>
       </div>
     </div>
