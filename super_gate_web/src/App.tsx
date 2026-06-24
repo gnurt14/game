@@ -12,10 +12,12 @@ import { MultiplayerLobby } from './components/MultiplayerLobby';
 import { DailyRewardModal } from './components/DailyRewardModal';
 import { LuckyWheelModal } from './components/LuckyWheelModal';
 import { GachaModal } from './components/GachaModal';
+import { WelcomeBackModal } from './components/WelcomeBackModal';
 
 // Services
 import { AuthService, PlayerModel } from './services/authService';
 import { CoinService } from './services/coinService';
+import { StreakService } from './services/streakService';
 import { RoomService, GameRoom } from './services/roomService';
 
 // Single Player Games
@@ -55,6 +57,7 @@ export const App: React.FC = () => {
   const [isDailyOpen, setIsDailyOpen] = useState(false);
   const [isWheelOpen, setIsWheelOpen] = useState(false);
   const [isGachaOpen, setIsGachaOpen] = useState(false);
+  const [isWelcomeBackOpen, setIsWelcomeBackOpen] = useState(false);
 
   // Check auth session on startup
   useEffect(() => {
@@ -105,6 +108,16 @@ export const App: React.FC = () => {
       const info = CoinService.getDailyRewardInfo();
       if (info.shouldShow) {
         setTimeout(() => setIsDailyOpen(true), 1500);
+      }
+    }
+  }, [player, isGuest, initializing]);
+
+  // Trigger Welcome Back modal nếu player offline >24h (hoặc lần đầu).
+  useEffect(() => {
+    if ((player || isGuest) && !initializing) {
+      if (StreakService.shouldShowWelcomeBack()) {
+        // Delay nhẹ để không xung đột với DailyReward modal.
+        setTimeout(() => setIsWelcomeBackOpen(true), 2800);
       }
     }
   }, [player, isGuest, initializing]);
@@ -254,6 +267,10 @@ export const App: React.FC = () => {
       <DailyRewardModal isOpen={isDailyOpen} onClose={() => setIsDailyOpen(false)} />
       <LuckyWheelModal isOpen={isWheelOpen} onClose={() => setIsWheelOpen(false)} />
       <GachaModal isOpen={isGachaOpen} onClose={() => setIsGachaOpen(false)} />
+      <WelcomeBackModal
+        isOpen={isWelcomeBackOpen}
+        onClose={() => setIsWelcomeBackOpen(false)}
+      />
 
       {/* Choice Modal for Lucky Games (Offline vs Multiplayer) */}
       {luckyGameModeSelect && (

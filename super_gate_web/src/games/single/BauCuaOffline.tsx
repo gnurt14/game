@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Play, RotateCcw, Trash2 } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
+import { StreakService } from '../../services/streakService';
+import { DoubleUpUniversalModal } from '../../components/DoubleUpUniversalModal';
+import { ComebackModal } from '../../components/ComebackModal';
 import confetti from 'canvas-confetti';
 
 interface BauCuaOfflineProps {
@@ -27,6 +30,16 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
   const [message, setMessage] = useState<string>('Hãy đặt cược vào các ô linh vật!');
   const [winDelta, setWinDelta] = useState<number | null>(null);
 
+  // Double-up + streak state
+  const [doubleUpOpen, setDoubleUpOpen] = useState<boolean>(false);
+  const [doubleUpBase, setDoubleUpBase] = useState<number>(0);
+  const [winStreak, setWinStreak] = useState<number>(
+    StreakService.getWinStreak('bau_cua'),
+  );
+  const [comebackOpen, setComebackOpen] = useState<boolean>(false);
+  const [comebackShownThisLoss, setComebackShownThisLoss] =
+    useState<boolean>(false);
+
   useEffect(() => {
     setBalance(CoinService.getData().balance);
     const unsub = CoinService.subscribe((data) => {
@@ -43,11 +56,37 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
       alert('❌ Bạn không đủ xu cược!');
       return;
     }
+
+    // Trigger comeback popup TRƯỚC khi đặt cược ván mới (1 lần / chuỗi thua).
+    if (
+      !comebackShownThisLoss &&
+      StreakService.shouldShowComeback('bau_cua')
+    ) {
+      setComebackOpen(true);
+      setComebackShownThisLoss(true);
+      return;
+    }
+
     const success = await CoinService.spendCoins(selectedChip);
     if (success) {
       setBets(prev => ({ ...prev, [idx]: prev[idx] + selectedChip }));
       setMessage(`Đã cược thêm ${selectedChip} xu vào ô ${BC_NAMES[idx]}`);
     }
+  };
+
+  const handleComebackContinue = () => {
+    setComebackOpen(false);
+  };
+
+  const handleDoubleUpClaim = async (finalAmount: number) => {
+    setDoubleUpOpen(false);
+    if (finalAmount > 0) {
+      await CoinService.earnCoins(finalAmount);
+      setMessage(`💰 Đã nhận ${finalAmount} xu vào ví!`);
+    } else {
+      setMessage('💸 Đã mất thưởng do gấp đôi. Đặt cược ván mới?');
+    }
+    setDoubleUpBase(0);
   };
 
   const handleClearBets = async () => {
@@ -162,20 +201,50 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
 
     // Delay payouts until all dice revealed
     setTimeout(async () => {
-      if (totalWin > 0) {
-        await CoinService.earnCoins(totalWin);
-        if (netResult > 0) {
-          setMessage(`🎉 Chúc mừng! Bạn thắng ròng +${netResult} xu!`);
-          setShowWinFlash(true);
-          setTimeout(() => setShowWinFlash(false), 1500);
-          confetti({ particleCount: 80, spread: 70, origin: { x: 0.3, y: 0.6 } });
-          setTimeout(() => confetti({ particleCount: 60, spread: 60, origin: { x: 0.7, y: 0.6 } }), 200);
-          setTimeout(() => confetti({ particleCount: 40, spread: 90, origin: { x: 0.5, y: 0.4 } }), 400);
-        } else {
-          setMessage(`🤝 Hòa vốn (Hoàn trả ${totalWin} xu cược).`);
+      if (netResult > 0) {
+        // Hoàn trả stake các ô trúng (totalWin - netResult = stake hoàn trả).
+        const stakesReturned = totalWin - netResult;
+        if (stakesReturned > 0) {
+          await CoinService.earnCoins(stakesReturned);
         }
+
+        // Apply Lucky Streak multiplier + Comeback bonus lên phần lời ròng.
+        const mult = StreakService.getMultiplier('bau_cua');
+        const comebackBonus = StreakService.consumeComebackBonus('bau_cua')
+          ? 2
+          : 1;
+        const boostedProfit = Math.round(netResult * mult * comebackBonus);
+
+        const mulLabel =
+          mult > 1 || comebackBonus > 1
+            ? ` (x${mult * comebackBonus} bonus!)`
+            : '';
+        setMessage(
+          `🎉 Thắng ròng +${boostedProfit} xu${mulLabel}! Treo gấp đôi hoặc nhận?`,
+        );
+        setShowWinFlash(true);
+        setTimeout(() => setShowWinFlash(false), 1500);
+        confetti({ particleCount: 80, spread: 70, origin: { x: 0.3, y: 0.6 } });
+        setTimeout(() => confetti({ particleCount: 60, spread: 60, origin: { x: 0.7, y: 0.6 } }), 200);
+        setTimeout(() => confetti({ particleCount: 40, spread: 90, origin: { x: 0.5, y: 0.4 } }), 400);
+
+        // Track streak
+        StreakService.recordWin('bau_cua');
+        setWinStreak(StreakService.getWinStreak('bau_cua'));
+        setComebackShownThisLoss(false);
+
+        // Mở DoubleUp modal với baseAmount = lời ròng đã boost.
+        setDoubleUpBase(boostedProfit);
+        setDoubleUpOpen(true);
+      } else if (totalWin > 0) {
+        // Hòa vốn — refund toàn bộ winning portion.
+        await CoinService.earnCoins(totalWin);
+        setMessage(`🤝 Hòa vốn (Hoàn trả ${totalWin} xu cược).`);
+        // Hòa vốn không tính win cũng không tính loss.
       } else {
         setMessage(`💸 Bạn đã mất ${capturedTotal} xu cược. Chúc bạn may mắn lần sau!`);
+        StreakService.recordLoss('bau_cua');
+        setWinStreak(0);
       }
       setBets({ 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
       await CoinService.recordGamePlayed('Bầu Cua Offline');
@@ -212,9 +281,28 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
             Số dư của bạn: <strong style={{ color: '#f1c40f', fontSize: '1rem' }}>🪙 {balance} xu</strong>
           </span>
         </div>
-        <button onClick={onClose} className="btn btn-danger" style={{ fontSize: '0.85rem' }}>
-          Thoát
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {winStreak > 0 && (
+            <span
+              style={{
+                padding: '4px 10px',
+                borderRadius: '12px',
+                background:
+                  'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)',
+                color: '#1a1138',
+                fontSize: '0.78rem',
+                fontWeight: 900,
+                boxShadow: '0 4px 12px rgba(241,196,15,0.35)',
+              }}
+            >
+              🔥 Chuỗi {winStreak} (x
+              {StreakService.getMultiplier('bau_cua')})
+            </span>
+          )}
+          <button onClick={onClose} className="btn btn-danger" style={{ fontSize: '0.85rem' }}>
+            Thoát
+          </button>
+        </div>
       </div>
 
       {/* Shaker / Dices Area */}
@@ -400,9 +488,21 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
         </div>
 
         <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-          💡 Chọn chip cược rồi nhấn vào các ô linh vật để đặt cược. Nhấn "Lắc Đĩa" để máy quay xúc xắc. Trùng 1 nhận x1 cược, trùng 2 x2, trùng 3 x3 và được hoàn trả lại tiền gốc cược trúng.
+          💡 Chọn chip cược rồi nhấn vào các ô linh vật để đặt cược. Nhấn "Lắc Đĩa" để máy quay xúc xắc. Trùng 1 nhận x1 cược, trùng 2 x2, trùng 3 x3 và được hoàn trả lại tiền gốc cược trúng. Có thể 🎰 Gấp Đôi sau khi thắng ròng!
         </div>
       </div>
+
+      <DoubleUpUniversalModal
+        isOpen={doubleUpOpen}
+        baseAmount={doubleUpBase}
+        onClaim={handleDoubleUpClaim}
+      />
+
+      <ComebackModal
+        isOpen={comebackOpen}
+        lossStreak={StreakService.getLossStreak('bau_cua')}
+        onContinue={handleComebackContinue}
+      />
     </div>
   );
 };
