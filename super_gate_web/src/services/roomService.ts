@@ -31,6 +31,42 @@ export interface RoomPlayer {
   joinedAt: string;
 }
 
+// ── Bau Cua bet helpers ─────────────────────────────────────────────────────
+// Bầu Cua hỗ trợ multi-bet: bet_choice được encode dạng JSON
+// '{"0":50,"3":30}' nghĩa là cược 50 xu vào ô 0 và 30 xu vào ô 3.
+// bet_amount lưu tổng tất cả slot.
+
+export function parseBauCuaBets(choice: string | null): Record<string, number> {
+  if (!choice) return {};
+  try {
+    const parsed = JSON.parse(choice);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const out: Record<string, number> = {};
+      for (const k of Object.keys(parsed)) {
+        const v = Number(parsed[k]);
+        if (Number.isFinite(v) && v > 0) out[k] = v;
+      }
+      return out;
+    }
+  } catch {
+    // legacy single-choice format (e.g. "0") — treat as no bet
+  }
+  return {};
+}
+
+function serializeBauCuaBets(bets: Record<string, number>): string | null {
+  const clean: Record<string, number> = {};
+  let total = 0;
+  for (const k of Object.keys(bets)) {
+    if (bets[k] > 0) {
+      clean[k] = bets[k];
+      total += bets[k];
+    }
+  }
+  if (total === 0) return null;
+  return JSON.stringify(clean);
+}
+
 // ── Xi Jack helpers ──────────────────────────────────────────────────────────
 
 export function buildXjDeck(seed: number): string[] {
@@ -208,20 +244,34 @@ export class RoomService {
     return data.map((r: any) => this.mapRoomFromDb(r));
   }
 
-  // ── Place Bet ──────────────────────────────────────────────────────────────
+  // ── Place Bet (Đỏ Đen — single-color, allow stacking same color) ───────────
 
   static async placeBet(amount: number, choice: string): Promise<void> {
     const myId = this.getMyId();
     if (!this.currentRoom || !myId) return;
     if (this.currentRoom.status !== 'betting') return;
+    if (amount <= 0) return;
+
+    const me = this.getMyPlayerRecord();
+    // Chặn đổi màu khi đã có cược (phải clear trước)
+    if (me && me.betAmount > 0 && me.betChoice && me.betChoice !== choice) {
+      throw new Error('Bạn đã cược màu khác. Hãy xoá cược cũ trước khi đổi.');
+    }
 
     const ok = await CoinService.spendCoins(amount);
     if (!ok) throw new Error('Không đủ xu');
 
+    const newTotal = (me?.betAmount || 0) + amount;
+    if (newTotal > this.currentRoom.maxBet) {
+      // refund tránh mất xu
+      await CoinService.earnCoins(amount);
+      throw new Error(`Vượt giới hạn cược tối đa ${this.currentRoom.maxBet} xu`);
+    }
+
     const { error } = await supabase
       .from('room_players')
       .update({
-        bet_amount: amount,
+        bet_amount: newTotal,
         bet_choice: choice,
         is_ready: true,
       })
@@ -229,6 +279,96 @@ export class RoomService {
       .eq('player_id', myId);
 
     if (error) throw error;
+    await this.refreshPlayers();
+  }
+
+  // ── Place Bet (Bầu Cua — multi-slot, additive) ─────────────────────────────
+
+  static async placeBauCuaBet(slotId: string, addAmount: number): Promise<void> {
+    const myId = this.getMyId();
+    if (!this.currentRoom || !myId) return;
+    if (this.currentRoom.status !== 'betting') return;
+    if (this.currentRoom.gameType !== 'bau_cua') return;
+    if (addAmount <= 0) return;
+
+    const me = this.getMyPlayerRecord();
+    const currentBets = parseBauCuaBets(me?.betChoice ?? null);
+    const newTotal = (me?.betAmount || 0) + addAmount;
+
+    if (newTotal > this.currentRoom.maxBet) {
+      throw new Error(`Vượt giới hạn cược tối đa ${this.currentRoom.maxBet} xu`);
+    }
+
+    const ok = await CoinService.spendCoins(addAmount);
+    if (!ok) throw new Error('Không đủ xu');
+
+    currentBets[slotId] = (currentBets[slotId] || 0) + addAmount;
+
+    const { error } = await supabase
+      .from('room_players')
+      .update({
+        bet_amount: newTotal,
+        bet_choice: serializeBauCuaBets(currentBets),
+        is_ready: true,
+      })
+      .eq('room_id', this.currentRoom.id)
+      .eq('player_id', myId);
+
+    if (error) throw error;
+    await this.refreshPlayers();
+  }
+
+  static async undoBauCuaSlot(slotId: string): Promise<void> {
+    const myId = this.getMyId();
+    if (!this.currentRoom || !myId) return;
+    if (this.currentRoom.status !== 'betting') return;
+    if (this.currentRoom.gameType !== 'bau_cua') return;
+
+    const me = this.getMyPlayerRecord();
+    if (!me) return;
+    const bets = parseBauCuaBets(me.betChoice);
+    const refundAmt = bets[slotId] || 0;
+    if (refundAmt <= 0) return;
+
+    delete bets[slotId];
+    const newTotal = Math.max(0, me.betAmount - refundAmt);
+    const newChoice = serializeBauCuaBets(bets);
+
+    await supabase
+      .from('room_players')
+      .update({
+        bet_amount: newTotal,
+        bet_choice: newChoice,
+        is_ready: newTotal > 0,
+      })
+      .eq('room_id', this.currentRoom.id)
+      .eq('player_id', myId);
+
+    await CoinService.earnCoins(refundAmt);
+    await this.refreshPlayers();
+  }
+
+  static async clearMyBets(): Promise<void> {
+    const myId = this.getMyId();
+    if (!this.currentRoom || !myId) return;
+    if (this.currentRoom.status !== 'betting') return;
+
+    const me = this.getMyPlayerRecord();
+    if (!me || me.betAmount <= 0) return;
+
+    const refundAmt = me.betAmount;
+
+    await supabase
+      .from('room_players')
+      .update({
+        bet_amount: 0,
+        bet_choice: null,
+        is_ready: false,
+      })
+      .eq('room_id', this.currentRoom.id)
+      .eq('player_id', myId);
+
+    await CoinService.earnCoins(refundAmt);
     await this.refreshPlayers();
   }
 
@@ -327,15 +467,32 @@ export class RoomService {
     if (me.betAmount === 0 || me.betChoice === null) return; // Đã cược hoặc không tham gia
 
     let delta = 0;
+    // returnAmount = số xu trả về ví player (gồm gốc thắng + lời)
+    let returnAmount = 0;
     if (this.currentRoom.gameType === 'bau_cua') {
       const dice = this.currentRoom.gameState.dice as number[];
-      const choice = parseInt(me.betChoice);
-      const matches = dice.filter((d) => d === choice).length;
-      delta = matches > 0 ? me.betAmount * matches : -me.betAmount;
+      const bets = parseBauCuaBets(me.betChoice);
+      // Multi-bet: settle từng slot độc lập
+      for (const slotKey of Object.keys(bets)) {
+        const slotAmt = bets[slotKey];
+        const slotId = parseInt(slotKey);
+        const matches = dice.filter((d) => d === slotId).length;
+        if (matches > 0) {
+          delta += slotAmt * matches;
+          returnAmount += slotAmt * (matches + 1); // gốc + lời
+        } else {
+          delta -= slotAmt;
+        }
+      }
     } else if (this.currentRoom.gameType === 'do_den') {
       const isRed = this.currentRoom.gameState.card.isRed as boolean;
       const betRed = me.betChoice === 'red';
-      delta = betRed === isRed ? me.betAmount : -me.betAmount;
+      if (betRed === isRed) {
+        delta = me.betAmount;
+        returnAmount = me.betAmount * 2; // gốc + lời 1x
+      } else {
+        delta = -me.betAmount;
+      }
     } else {
       return; // Xì Jack được settle riêng
     }
@@ -352,8 +509,8 @@ export class RoomService {
       .eq('room_id', this.currentRoom.id)
       .eq('player_id', myId);
 
-    if (delta > 0) {
-      await CoinService.earnCoins(me.betAmount + delta);
+    if (returnAmount > 0) {
+      await CoinService.earnCoins(returnAmount);
     }
 
     await this.refreshPlayers();

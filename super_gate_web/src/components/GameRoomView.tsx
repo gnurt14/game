@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { RoomService, GameRoom, RoomPlayer, xjHandValue } from '../services/roomService';
-import { User, Play, RotateCcw, AlertTriangle } from 'lucide-react';
+import { RoomService, GameRoom, RoomPlayer, xjHandValue, parseBauCuaBets } from '../services/roomService';
+import { User, Play, RotateCcw, AlertTriangle, X, Trash2 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface GameRoomViewProps {
@@ -97,8 +97,8 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
 
   const handlePlaceBet = async (choice: string) => {
     if (!currentRoom || currentRoom.status !== 'betting') return;
-    if (myBetAmount < currentRoom.minBet || myBetAmount > currentRoom.maxBet) {
-      alert(`Số tiền cược phải từ ${currentRoom.minBet} đến ${currentRoom.maxBet} xu.`);
+    if (myBetAmount < currentRoom.minBet) {
+      alert(`Mức cược tối thiểu là ${currentRoom.minBet} xu.`);
       return;
     }
 
@@ -106,6 +106,35 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
       await RoomService.placeBet(myBetAmount, choice);
     } catch (e: any) {
       alert(e.message || 'Cược thất bại');
+    }
+  };
+
+  const handlePlaceBauCuaBet = async (slotId: string) => {
+    if (!currentRoom || currentRoom.status !== 'betting') return;
+    if (myBetAmount < currentRoom.minBet) {
+      alert(`Mức cược tối thiểu là ${currentRoom.minBet} xu.`);
+      return;
+    }
+    try {
+      await RoomService.placeBauCuaBet(slotId, myBetAmount);
+    } catch (e: any) {
+      alert(e.message || 'Cược thất bại');
+    }
+  };
+
+  const handleUndoBauCuaSlot = async (slotId: string) => {
+    try {
+      await RoomService.undoBauCuaSlot(slotId);
+    } catch (e: any) {
+      alert(e.message || 'Huỷ cược thất bại');
+    }
+  };
+
+  const handleClearMyBets = async () => {
+    try {
+      await RoomService.clearMyBets();
+    } catch (e: any) {
+      alert(e.message || 'Xoá cược thất bại');
     }
   };
 
@@ -186,12 +215,26 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
     const isBetting = currentRoom.status === 'betting';
     const gameState = currentRoom.gameState;
 
+    // Cược của tôi (multi-slot)
+    const myBets = parseBauCuaBets(me?.betChoice ?? null);
+    const myTotalBet = Object.values(myBets).reduce((s, v) => s + v, 0);
+
+    // Tổng mọi player cho từng slot
+    const roomTotals: Record<number, number> = {};
+    for (const p of players) {
+      const pBets = parseBauCuaBets(p.betChoice);
+      for (const k of Object.keys(pBets)) {
+        const id = parseInt(k);
+        roomTotals[id] = (roomTotals[id] || 0) + pBets[k];
+      }
+    }
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%' }}>
 
         {/* Shaking Cup Animation or Revealed Dice */}
         <div style={{
-          height: '110px',
+          height: '100px',
           background: 'rgba(0,0,0,0.25)',
           borderRadius: '12px',
           border: 'var(--border-glass)',
@@ -224,8 +267,10 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
               ))}
             </div>
           ) : (
-            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-              {isBetting ? '🔔 Hãy đặt cược vào các ô linh vật phía dưới!' : 'Chờ bắt đầu cược...'}
+            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center', padding: '0 16px' }}>
+              {isBetting
+                ? `🔔 Click vào linh vật để đặt ${myBetAmount} xu. Có thể cược NHIỀU ô cùng lúc!`
+                : 'Chờ bắt đầu cược...'}
             </span>
           )}
         </div>
@@ -234,25 +279,24 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(3, 1fr)',
-          gap: '12px',
+          gap: '10px',
         }}>
           {BC_ICONS.map((icon, idx) => {
-            const hasMyBet = me?.betChoice === String(idx);
-
-            // Calculate total bets on this icon by all players in the room
-            const totalBets = players
-              .filter(p => p.betChoice === String(idx))
-              .reduce((sum, p) => sum + p.betAmount, 0);
+            const myBetOnThis = myBets[String(idx)] || 0;
+            const roomTotal = roomTotals[idx] || 0;
+            const hasMyBet = myBetOnThis > 0;
 
             return (
               <div
                 key={idx}
-                onClick={() => isBetting && handlePlaceBet(String(idx))}
+                onClick={() => isBetting && handlePlaceBauCuaBet(String(idx))}
                 style={{
-                  background: hasMyBet ? 'rgba(124, 111, 255, 0.18)' : 'rgba(255, 255, 255, 0.03)',
-                  border: hasMyBet ? '2px solid var(--primary-color)' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: hasMyBet
+                    ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.18) 0%, rgba(241, 196, 15, 0.06) 100%)'
+                    : 'rgba(255, 255, 255, 0.03)',
+                  border: hasMyBet ? '2px solid #f1c40f' : '1px solid rgba(255, 255, 255, 0.08)',
                   borderRadius: '12px',
-                  padding: '16px',
+                  padding: '14px 8px 10px 8px',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -260,34 +304,142 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                   cursor: isBetting ? 'pointer' : 'default',
                   transition: 'all 0.15s ease',
                   position: 'relative',
+                  boxShadow: hasMyBet ? '0 0 14px rgba(241, 196, 15, 0.25)' : 'none',
                 }}
                 className={isBetting ? 'glass-interactive' : ''}
               >
-                <span style={{ fontSize: '2.4rem' }}>{icon}</span>
-                <span style={{ fontSize: '0.85rem', fontWeight: 700, marginTop: '6px', color: 'white' }}>
+                <span style={{ fontSize: '2.2rem' }}>{icon}</span>
+                <span style={{ fontSize: '0.8rem', fontWeight: 700, marginTop: '4px', color: 'white' }}>
                   {BC_LABELS[idx]}
                 </span>
 
-                {/* Total Bet chip */}
-                {totalBets > 0 && (
+                {/* Tổng phòng (góc trên phải, nhỏ + xám) */}
+                {roomTotal > 0 && (
                   <span style={{
                     position: 'absolute',
-                    top: '8px',
-                    right: '8px',
-                    fontSize: '0.65rem',
-                    fontWeight: 800,
-                    background: 'rgba(241, 196, 15, 0.15)',
-                    color: '#f1c40f',
-                    padding: '2px 6px',
+                    top: '6px',
+                    right: '6px',
+                    fontSize: '0.6rem',
+                    fontWeight: 700,
+                    background: 'rgba(255,255,255,0.08)',
+                    color: 'rgba(255,255,255,0.6)',
+                    padding: '2px 5px',
                     borderRadius: '4px',
                   }}>
-                    🪙 {totalBets}
+                    Σ {roomTotal}
                   </span>
+                )}
+
+                {/* CƯỢC CỦA BẠN trên ô này (chip vàng nổi bật + nút huỷ) */}
+                {myBetOnThis > 0 && (
+                  <div style={{
+                    marginTop: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: '#f1c40f',
+                    color: '#1a1530',
+                    padding: '2px 4px 2px 8px',
+                    borderRadius: '12px',
+                    fontWeight: 900,
+                    fontSize: '0.75rem',
+                  }}>
+                    🪙 {myBetOnThis}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isBetting) handleUndoBauCuaSlot(String(idx));
+                      }}
+                      title="Huỷ cược ô này (hoàn xu)"
+                      style={{
+                        background: 'rgba(0,0,0,0.25)',
+                        border: 'none',
+                        color: '#1a1530',
+                        borderRadius: '50%',
+                        width: '16px',
+                        height: '16px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: 0,
+                      }}
+                    >
+                      <X size={10} strokeWidth={3} />
+                    </button>
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
+
+        {/* CƯỢC CỦA BẠN — bảng tổng kết */}
+        {isBetting && (
+          <div style={{
+            background: myTotalBet > 0
+              ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.12) 0%, rgba(241, 196, 15, 0.02) 100%)'
+              : 'rgba(0,0,0,0.2)',
+            border: myTotalBet > 0 ? '1.5px solid rgba(241, 196, 15, 0.35)' : '1px dashed rgba(255,255,255,0.1)',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            flexWrap: 'wrap',
+            minHeight: '44px',
+          }}>
+            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f1c40f', letterSpacing: 1, whiteSpace: 'nowrap' }}>
+              CƯỢC CỦA BẠN:
+            </span>
+
+            {myTotalBet === 0 ? (
+              <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                Chưa cược — click vào ô linh vật để đặt
+              </span>
+            ) : (
+              <>
+                {Object.keys(myBets).map((k) => {
+                  const idx = parseInt(k);
+                  return (
+                    <span key={k} style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '5px',
+                      background: 'rgba(255,255,255,0.08)',
+                      padding: '4px 8px',
+                      borderRadius: '14px',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                      color: 'white',
+                    }}>
+                      <span style={{ fontSize: '0.9rem' }}>{BC_ICONS[idx]}</span>
+                      <span style={{ color: '#f1c40f' }}>{myBets[k]} xu</span>
+                    </span>
+                  );
+                })}
+                <span style={{
+                  marginLeft: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                }}>
+                  <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: 800 }}>
+                    Tổng: <span style={{ color: '#f1c40f' }}>{myTotalBet} xu</span>
+                  </span>
+                  <button
+                    onClick={handleClearMyBets}
+                    title="Xoá toàn bộ cược (hoàn xu)"
+                    className="btn btn-secondary"
+                    style={{ padding: '4px 8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    <Trash2 size={11} /> Xoá hết
+                  </button>
+                </span>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -299,13 +451,16 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
     const totalRed = players.filter(p => p.betChoice === 'red').reduce((sum, p) => sum + p.betAmount, 0);
     const totalBlack = players.filter(p => p.betChoice === 'black').reduce((sum, p) => sum + p.betAmount, 0);
 
+    const myColor = me?.betChoice ?? null;
+    const myAmount = me?.betAmount ?? 0;
+
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%', alignItems: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', alignItems: 'center' }}>
 
         {/* Revealed Card display */}
         <div style={{
           width: '100%',
-          height: '130px',
+          height: '120px',
           background: 'rgba(0,0,0,0.25)',
           borderRadius: '12px',
           border: 'var(--border-glass)',
@@ -342,14 +497,16 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
               </div>
             ) : null
           ) : (
-            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-              {isBetting ? '🔴 Đặt vào Đỏ hoặc Đen ⚫' : 'Chờ bắt đầu cược...'}
+            <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center', padding: '0 16px' }}>
+              {isBetting
+                ? `🔔 Click vào ĐỎ hoặc ĐEN để đặt ${myBetAmount} xu. Có thể bấm nhiều lần để tăng cược.`
+                : 'Chờ bắt đầu cược...'}
             </span>
           )}
         </div>
 
         {/* Red & Black betting options */}
-        <div style={{ display: 'flex', gap: '20px', width: '100%', maxWidth: '340px' }}>
+        <div style={{ display: 'flex', gap: '14px', width: '100%', maxWidth: '380px' }}>
           {/* RED Option */}
           <div
             onClick={() => isBetting && handlePlaceBet('red')}
@@ -357,23 +514,46 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
               flex: 1,
               height: '120px',
               borderRadius: '12px',
-              background: me?.betChoice === 'red' ? 'rgba(231, 76, 60, 0.25)' : 'rgba(231, 76, 60, 0.05)',
-              border: me?.betChoice === 'red' ? '2.5px solid #e74c3c' : '1px solid rgba(231, 76, 60, 0.2)',
+              background: myColor === 'red' ? 'rgba(231, 76, 60, 0.28)' : 'rgba(231, 76, 60, 0.05)',
+              border: myColor === 'red' ? '2.5px solid #e74c3c' : '1px solid rgba(231, 76, 60, 0.2)',
               cursor: isBetting ? 'pointer' : 'default',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'all 0.15s ease',
-              position: 'relative'
+              position: 'relative',
+              boxShadow: myColor === 'red' ? '0 0 18px rgba(231,76,60,0.4)' : 'none',
             }}
             className={isBetting ? 'glass-interactive' : ''}
           >
-            <span style={{ fontSize: '2.5rem' }}>🔴</span>
-            <span style={{ fontWeight: 800, fontSize: '1rem', marginTop: '6px', color: '#e74c3c' }}>ĐỎ (RED)</span>
+            <span style={{ fontSize: '2.4rem' }}>🔴</span>
+            <span style={{ fontWeight: 800, fontSize: '0.95rem', marginTop: '4px', color: '#e74c3c' }}>ĐỎ (RED)</span>
+
+            {/* Cược của bạn vào ô này */}
+            {myColor === 'red' && (
+              <div style={{
+                marginTop: '6px',
+                background: '#f1c40f',
+                color: '#1a1530',
+                padding: '2px 10px',
+                borderRadius: '12px',
+                fontWeight: 900,
+                fontSize: '0.78rem',
+              }}>
+                🪙 BẠN: {myAmount}
+              </div>
+            )}
+
+            {/* Tổng phòng */}
             {totalRed > 0 && (
-              <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '0.7rem', fontWeight: 800, background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px' }}>
-                🪙 {totalRed}
+              <span style={{
+                position: 'absolute', top: '6px', right: '6px',
+                fontSize: '0.6rem', fontWeight: 700,
+                background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.65)',
+                padding: '2px 5px', borderRadius: '4px'
+              }}>
+                Σ {totalRed}
               </span>
             )}
           </div>
@@ -385,27 +565,108 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
               flex: 1,
               height: '120px',
               borderRadius: '12px',
-              background: me?.betChoice === 'black' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(255, 255, 255, 0.02)',
-              border: me?.betChoice === 'black' ? '2.5px solid white' : '1px solid rgba(255, 255, 255, 0.1)',
+              background: myColor === 'black' ? 'rgba(255, 255, 255, 0.18)' : 'rgba(255, 255, 255, 0.02)',
+              border: myColor === 'black' ? '2.5px solid white' : '1px solid rgba(255, 255, 255, 0.1)',
               cursor: isBetting ? 'pointer' : 'default',
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
               transition: 'all 0.15s ease',
-              position: 'relative'
+              position: 'relative',
+              boxShadow: myColor === 'black' ? '0 0 18px rgba(255,255,255,0.25)' : 'none',
             }}
             className={isBetting ? 'glass-interactive' : ''}
           >
-            <span style={{ fontSize: '2.5rem' }}>⚫</span>
-            <span style={{ fontWeight: 800, fontSize: '1rem', marginTop: '6px', color: 'white' }}>ĐEN (BLACK)</span>
+            <span style={{ fontSize: '2.4rem' }}>⚫</span>
+            <span style={{ fontWeight: 800, fontSize: '0.95rem', marginTop: '4px', color: 'white' }}>ĐEN (BLACK)</span>
+
+            {myColor === 'black' && (
+              <div style={{
+                marginTop: '6px',
+                background: '#f1c40f',
+                color: '#1a1530',
+                padding: '2px 10px',
+                borderRadius: '12px',
+                fontWeight: 900,
+                fontSize: '0.78rem',
+              }}>
+                🪙 BẠN: {myAmount}
+              </div>
+            )}
+
             {totalBlack > 0 && (
-              <span style={{ position: 'absolute', top: '8px', right: '8px', fontSize: '0.7rem', fontWeight: 800, background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px' }}>
-                🪙 {totalBlack}
+              <span style={{
+                position: 'absolute', top: '6px', right: '6px',
+                fontSize: '0.6rem', fontWeight: 700,
+                background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.65)',
+                padding: '2px 5px', borderRadius: '4px'
+              }}>
+                Σ {totalBlack}
               </span>
             )}
           </div>
         </div>
+
+        {/* CƯỢC CỦA BẠN — banner */}
+        {isBetting && (
+          <div style={{
+            width: '100%',
+            maxWidth: '380px',
+            background: myAmount > 0
+              ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.12) 0%, rgba(241, 196, 15, 0.02) 100%)'
+              : 'rgba(0,0,0,0.2)',
+            border: myAmount > 0 ? '1.5px solid rgba(241, 196, 15, 0.35)' : '1px dashed rgba(255,255,255,0.1)',
+            borderRadius: '10px',
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+            minHeight: '44px',
+            justifyContent: 'space-between',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f1c40f', letterSpacing: 1 }}>
+                CƯỢC CỦA BẠN:
+              </span>
+              {myAmount === 0 ? (
+                <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
+                  Chưa cược
+                </span>
+              ) : (
+                <span style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  background: myColor === 'red' ? 'rgba(231,76,60,0.25)' : 'rgba(255,255,255,0.12)',
+                  border: myColor === 'red' ? '1px solid #e74c3c' : '1px solid rgba(255,255,255,0.25)',
+                  padding: '4px 10px',
+                  borderRadius: '14px',
+                  fontSize: '0.78rem',
+                  fontWeight: 800,
+                  color: 'white',
+                }}>
+                  <span style={{ fontSize: '0.9rem' }}>{myColor === 'red' ? '🔴' : '⚫'}</span>
+                  <span style={{ color: '#f1c40f' }}>{myAmount} xu</span>
+                  <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
+                    vào {myColor === 'red' ? 'ĐỎ' : 'ĐEN'}
+                  </span>
+                </span>
+              )}
+            </div>
+
+            {myAmount > 0 && (
+              <button
+                onClick={handleClearMyBets}
+                title="Xoá cược (hoàn xu)"
+                className="btn btn-secondary"
+                style={{ padding: '4px 8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <Trash2 size={11} /> Xoá
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   };
@@ -592,30 +853,61 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
 
         {/* Cược controller panel (Only for betting status & non Blackjack games) */}
         {currentRoom.status === 'betting' && currentRoom.gameType !== 'xi_jack' && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '12px 18px', borderRadius: '12px', border: 'var(--border-glass)', marginTop: '20px', gap: '16px' }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            background: 'rgba(255,255,255,0.02)',
+            padding: '12px 18px',
+            borderRadius: '12px',
+            border: 'var(--border-glass)',
+            marginTop: '16px',
+            gap: '16px',
+            flexWrap: 'wrap',
+          }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
-              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Tùy chọn xu cược</span>
-              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f1c40f', marginTop: '2px' }}>🪙 {myBetAmount} xu</span>
+              <span style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', fontWeight: 700, letterSpacing: 1 }}>
+                XU MỖI LẦN CLICK
+              </span>
+              <span style={{ fontSize: '1.25rem', fontWeight: 900, color: '#f1c40f', marginTop: '2px' }}>
+                🪙 {myBetAmount} xu
+              </span>
+              <span style={{ fontSize: '0.65rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                Click ô để cộng {myBetAmount} xu vào ô đó
+              </span>
             </div>
 
-            {/* Quick increase chips */}
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {[10, 50, 100].map(val => (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+              {[10, 50, 100, 500].map(val => (
                 <button
                   key={val}
-                  onClick={() => setMyBetAmount(prev => Math.min(currentRoom.maxBet, prev + val))}
+                  onClick={() => setMyBetAmount(val)}
                   className="btn btn-secondary"
-                  style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                  style={{
+                    padding: '6px 12px',
+                    fontSize: '0.75rem',
+                    background: myBetAmount === val ? 'rgba(241, 196, 15, 0.18)' : undefined,
+                    border: myBetAmount === val ? '1px solid #f1c40f' : undefined,
+                    color: myBetAmount === val ? '#f1c40f' : undefined,
+                    fontWeight: myBetAmount === val ? 800 : 600,
+                  }}
                 >
-                  +{val}
+                  {val}
                 </button>
               ))}
               <button
-                onClick={() => setMyBetAmount(currentRoom.minBet)}
+                onClick={() => setMyBetAmount(prev => Math.min(currentRoom.maxBet, prev + 10))}
                 className="btn btn-secondary"
-                style={{ padding: '6px 12px', fontSize: '0.75rem' }}
+                style={{ padding: '6px 10px', fontSize: '0.7rem' }}
               >
-                Reset
+                +10
+              </button>
+              <button
+                onClick={() => setMyBetAmount(prev => Math.min(currentRoom.maxBet, prev + 100))}
+                className="btn btn-secondary"
+                style={{ padding: '6px 10px', fontSize: '0.7rem' }}
+              >
+                +100
               </button>
             </div>
           </div>
@@ -623,34 +915,97 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
 
         {/* Ready/Unready controller (Only for Blackjack games waiting) */}
         {currentRoom.gameType === 'xi_jack' && currentRoom.status === 'waiting' && (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(255,255,255,0.02)', padding: '12px 18px', borderRadius: '12px', border: 'var(--border-glass)', marginTop: '20px', gap: '16px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div style={{ display: 'flex', flexDirection: 'column' }}>
-                <span style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Cược Xì Jack</span>
-                <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f1c40f', marginTop: '2px' }}>🪙 {myBetAmount} xu</span>
-              </div>
-              <div style={{ display: 'flex', gap: '6px' }}>
-                {[10, 50, 100].map(val => (
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            background: me?.isReady
+              ? 'linear-gradient(135deg, rgba(46, 204, 113, 0.10) 0%, rgba(46, 204, 113, 0.02) 100%)'
+              : 'rgba(255,255,255,0.02)',
+            padding: '14px 18px',
+            borderRadius: '12px',
+            border: me?.isReady ? '1.5px solid rgba(46, 204, 113, 0.45)' : 'var(--border-glass)',
+            marginTop: '20px',
+            gap: '12px'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', fontWeight: 700, letterSpacing: 1 }}>
+                    {me?.isReady ? 'BẠN ĐÃ CƯỢC' : 'CHỌN MỨC CƯỢC'}
+                  </span>
+                  <span style={{ fontSize: '1.4rem', fontWeight: 900, color: '#f1c40f', marginTop: '2px' }}>
+                    🪙 {me?.isReady ? me.betAmount : myBetAmount} xu
+                  </span>
+                </div>
+
+                {/* Chip tăng cược — disable khi đã ready */}
+                <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                  {[10, 50, 100].map(val => (
+                    <button
+                      key={val}
+                      disabled={me?.isReady}
+                      onClick={() => setMyBetAmount(prev => Math.min(currentRoom.maxBet, prev + val))}
+                      className="btn btn-secondary"
+                      style={{ padding: '5px 10px', fontSize: '0.72rem', opacity: me?.isReady ? 0.4 : 1 }}
+                    >
+                      +{val}
+                    </button>
+                  ))}
                   <button
-                    key={val}
                     disabled={me?.isReady}
-                    onClick={() => setMyBetAmount(prev => Math.min(currentRoom.maxBet, prev + val))}
+                    onClick={() => setMyBetAmount(currentRoom.minBet)}
                     className="btn btn-secondary"
-                    style={{ padding: '4px 8px', fontSize: '0.7rem' }}
+                    style={{ padding: '5px 10px', fontSize: '0.72rem', opacity: me?.isReady ? 0.4 : 1 }}
                   >
-                    +{val}
+                    Reset
                   </button>
-                ))}
+                </div>
               </div>
+
+              <button
+                onClick={handleReadyXiJack}
+                className={me?.isReady ? 'btn btn-secondary' : 'btn btn-primary'}
+                style={{
+                  padding: '12px 22px',
+                  fontWeight: 900,
+                  fontSize: '0.88rem',
+                  minWidth: '200px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '2px',
+                  lineHeight: 1.15,
+                }}
+              >
+                {me?.isReady ? (
+                  <>
+                    <span>✖ HỦY SẴN SÀNG</span>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 600, opacity: 0.8 }}>
+                      (hoàn {me.betAmount} xu)
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>✓ XÁC NHẬN CƯỢC {myBetAmount}</span>
+                    <span style={{ fontSize: '0.65rem', fontWeight: 600, opacity: 0.85 }}>
+                      Sẵn sàng vào ván
+                    </span>
+                  </>
+                )}
+              </button>
             </div>
 
-            <button
-              onClick={handleReadyXiJack}
-              className={me?.isReady ? 'btn btn-secondary' : 'btn btn-primary'}
-              style={{ padding: '10px 20px', fontWeight: 800 }}
-            >
-              {me?.isReady ? '✖ HỦY SẴN SÀNG' : '✓ SẴN SÀNG (READY)'}
-            </button>
+            {/* Hint khi chưa ready */}
+            {!me?.isReady && (
+              <div style={{
+                fontSize: '0.7rem',
+                color: 'var(--color-text-muted)',
+                paddingTop: '4px',
+                borderTop: '1px dashed rgba(255,255,255,0.06)',
+              }}>
+                💡 Xác định mức cược rồi nhấn xác nhận. Sau khi xác nhận, không thể thay đổi cho đến khi ván kết thúc.
+              </div>
+            )}
           </div>
         )}
 
