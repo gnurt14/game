@@ -464,7 +464,9 @@ export class RoomService {
     if (!myRow) return;
 
     const me = this.mapPlayerFromDb(myRow);
-    if (me.betAmount === 0 || me.betChoice === null) return; // Đã cược hoặc không tham gia
+    if (me.betAmount === 0 || me.betChoice === null) return; // Không cược round này
+    // is_ready=true sau khi cược, =false sau khi settle. Skip nếu đã settle.
+    if (!me.isReady) return;
 
     let delta = 0;
     // returnAmount = số xu trả về ví player (gồm gốc thắng + lời)
@@ -472,14 +474,19 @@ export class RoomService {
     if (this.currentRoom.gameType === 'bau_cua') {
       const dice = this.currentRoom.gameState.dice as number[];
       const bets = parseBauCuaBets(me.betChoice);
-      // Multi-bet: settle từng slot độc lập
+      // Triple = cả 3 xúc xắc cùng face → BONUS x5 thay vì x3
+      const isTriple =
+        dice.length === 3 && dice[0] === dice[1] && dice[1] === dice[2];
+
       for (const slotKey of Object.keys(bets)) {
         const slotAmt = bets[slotKey];
         const slotId = parseInt(slotKey);
         const matches = dice.filter((d) => d === slotId).length;
         if (matches > 0) {
-          delta += slotAmt * matches;
-          returnAmount += slotAmt * (matches + 1); // gốc + lời
+          // Nếu triple và ô này trúng (matches=3) → lời x5 thay vì x3
+          const winMultiplier = isTriple && matches === 3 ? 5 : matches;
+          delta += slotAmt * winMultiplier;
+          returnAmount += slotAmt * (winMultiplier + 1); // gốc + lời
         } else {
           delta -= slotAmt;
         }
@@ -497,14 +504,14 @@ export class RoomService {
       return; // Xì Jack được settle riêng
     }
 
+    // GIỮ NGUYÊN bet_amount + bet_choice để hiển thị cho đến khi host mở ván
+    // mới (reset trong openBetting). is_ready=false đánh dấu "đã settle xong".
     await supabase
       .from('room_players')
       .update({
         result_delta: delta,
         total_delta: me.totalDelta + delta,
-        bet_amount: 0,
-        bet_choice: null,
-        is_ready: true,
+        is_ready: false,
       })
       .eq('room_id', this.currentRoom.id)
       .eq('player_id', myId);
@@ -880,6 +887,29 @@ export class RoomService {
     this.notifyPlayers();
   }
 
+  // ── Auto-reset bet khi vào ván mới (mỗi client tự reset row của mình) ──────
+
+  private static async autoResetMyBetForNewRound(): Promise<void> {
+    const myId = this.getMyId();
+    if (!this.currentRoom || !myId) return;
+    try {
+      await supabase
+        .from('room_players')
+        .update({
+          bet_amount: 0,
+          bet_choice: null,
+          result_delta: 0,
+          xi_jack_result: null,
+          is_ready: false,
+        })
+        .eq('room_id', this.currentRoom.id)
+        .eq('player_id', myId);
+      await this.refreshPlayers();
+    } catch (e) {
+      console.error('[RoomService] autoResetMyBetForNewRound error:', e);
+    }
+  }
+
   // ── Private Subscription Helpers ───────────────────────────────────────────
 
   private static async joinAsPlayer(): Promise<void> {
@@ -912,8 +942,16 @@ export class RoomService {
           filter: `id=eq.${roomId}`,
         },
         (payload: any) => {
+          const prevRound = this.currentRoom?.roundNumber ?? 0;
           this.currentRoom = this.mapRoomFromDb(payload.new);
           this.notifyRoom();
+          // Round transition (host vừa mở ván mới) → tự reset row của mình
+          if (
+            this.currentRoom.status === 'betting' &&
+            this.currentRoom.roundNumber > prevRound
+          ) {
+            this.autoResetMyBetForNewRound();
+          }
         }
       )
       .subscribe();

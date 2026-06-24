@@ -213,7 +213,20 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
 
   const renderBauCuaBoard = () => {
     const isBetting = currentRoom.status === 'betting';
+    const isRevealed =
+      currentRoom.status === 'rolling' || currentRoom.status === 'finished';
     const gameState = currentRoom.gameState;
+    const dice: number[] = gameState?.dice ?? [];
+
+    // Triple: cả 3 xúc xắc cùng face → bonus x5
+    const isTriple =
+      isRevealed && dice.length === 3 && dice[0] === dice[1] && dice[1] === dice[2];
+
+    // Tính diceCount theo từng linh vật (cho highlight ô trúng)
+    const diceCount: Record<number, number> = {};
+    if (isRevealed) {
+      for (const d of dice) diceCount[d] = (diceCount[d] || 0) + 1;
+    }
 
     // Cược của tôi (multi-slot)
     const myBets = parseBauCuaBets(me?.betChoice ?? null);
@@ -234,37 +247,54 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
 
         {/* Shaking Cup Animation or Revealed Dice */}
         <div style={{
-          height: '100px',
-          background: 'rgba(0,0,0,0.25)',
+          minHeight: '100px',
+          background: isTriple
+            ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.18) 0%, rgba(231, 76, 60, 0.10) 100%)'
+            : 'rgba(0,0,0,0.25)',
           borderRadius: '12px',
-          border: 'var(--border-glass)',
+          border: isTriple ? '2px solid #f1c40f' : 'var(--border-glass)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           position: 'relative',
-          overflow: 'hidden'
+          padding: '12px',
+          boxShadow: isTriple ? '0 0 22px rgba(241, 196, 15, 0.35)' : 'none',
         }}>
           {shakeCup ? (
             <div style={{ fontSize: '3.5rem', animation: 'bounce 0.15s infinite' }}>🫨🥤</div>
-          ) : currentRoom.status === 'rolling' || currentRoom.status === 'finished' ? (
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-              {gameState?.dice?.map((dIdx: number, idx: number) => (
-                <div key={idx} style={{
-                  fontSize: '2.5rem',
-                  background: 'rgba(255, 255, 255, 0.08)',
-                  width: '60px',
-                  height: '60px',
-                  borderRadius: '12px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  border: '1px solid rgba(255,255,255,0.15)',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-                  animation: 'spin-slow 0.4s ease-out'
+          ) : isRevealed ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+              {isTriple && (
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: '6px',
+                  fontSize: '0.85rem', fontWeight: 900, color: '#f1c40f',
+                  letterSpacing: 2, textShadow: '0 0 12px rgba(241,196,15,0.7)',
+                  animation: 'pulse 1s ease-in-out infinite',
                 }}>
-                  {BC_ICONS[dIdx]}
+                  🎰 TRIPLE! BONUS x5 🎰
                 </div>
-              ))}
+              )}
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+                {dice.map((dIdx: number, idx: number) => (
+                  <div key={idx} style={{
+                    fontSize: '2.5rem',
+                    background: isTriple
+                      ? 'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)'
+                      : 'rgba(255, 255, 255, 0.08)',
+                    width: '60px',
+                    height: '60px',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    border: isTriple ? '2px solid #fff' : '1px solid rgba(255,255,255,0.15)',
+                    boxShadow: isTriple ? '0 0 16px rgba(241,196,15,0.6)' : '0 4px 12px rgba(0,0,0,0.3)',
+                    animation: 'spin-slow 0.4s ease-out'
+                  }}>
+                    {BC_ICONS[dIdx]}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', fontWeight: 600, textAlign: 'center', padding: '0 16px' }}>
@@ -285,16 +315,33 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
             const myBetOnThis = myBets[String(idx)] || 0;
             const roomTotal = roomTotals[idx] || 0;
             const hasMyBet = myBetOnThis > 0;
+            const matches = isRevealed ? (diceCount[idx] || 0) : 0;
+            const isWinner = isRevealed && matches > 0;
+
+            // Border + bg priority: winner (xanh) > my bet (vàng) > default
+            const cellBorder = isWinner
+              ? '2.5px solid #2ecc71'
+              : hasMyBet
+                ? '2px solid #f1c40f'
+                : '1px solid rgba(255, 255, 255, 0.08)';
+            const cellBg = isWinner
+              ? 'linear-gradient(135deg, rgba(46, 204, 113, 0.22) 0%, rgba(46, 204, 113, 0.06) 100%)'
+              : hasMyBet
+                ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.18) 0%, rgba(241, 196, 15, 0.06) 100%)'
+                : 'rgba(255, 255, 255, 0.03)';
+            const cellShadow = isWinner
+              ? '0 0 18px rgba(46, 204, 113, 0.45)'
+              : hasMyBet
+                ? '0 0 14px rgba(241, 196, 15, 0.25)'
+                : 'none';
 
             return (
               <div
                 key={idx}
                 onClick={() => isBetting && handlePlaceBauCuaBet(String(idx))}
                 style={{
-                  background: hasMyBet
-                    ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.18) 0%, rgba(241, 196, 15, 0.06) 100%)'
-                    : 'rgba(255, 255, 255, 0.03)',
-                  border: hasMyBet ? '2px solid #f1c40f' : '1px solid rgba(255, 255, 255, 0.08)',
+                  background: cellBg,
+                  border: cellBorder,
                   borderRadius: '12px',
                   padding: '14px 8px 10px 8px',
                   display: 'flex',
@@ -304,7 +351,7 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                   cursor: isBetting ? 'pointer' : 'default',
                   transition: 'all 0.15s ease',
                   position: 'relative',
-                  boxShadow: hasMyBet ? '0 0 14px rgba(241, 196, 15, 0.25)' : 'none',
+                  boxShadow: cellShadow,
                 }}
                 className={isBetting ? 'glass-interactive' : ''}
               >
@@ -312,6 +359,26 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                 <span style={{ fontSize: '0.8rem', fontWeight: 700, marginTop: '4px', color: 'white' }}>
                   {BC_LABELS[idx]}
                 </span>
+
+                {/* Badge "TRÚNG xN" khi reveal ô có matches */}
+                {isWinner && (
+                  <span style={{
+                    position: 'absolute',
+                    bottom: '-8px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    background: 'linear-gradient(135deg, #2ecc71 0%, #16a085 100%)',
+                    color: '#0a1a0f',
+                    fontWeight: 900,
+                    fontSize: '0.65rem',
+                    padding: '2px 8px',
+                    borderRadius: '10px',
+                    letterSpacing: 0.5,
+                    boxShadow: '0 2px 8px rgba(46,204,113,0.45)',
+                  }}>
+                    TRÚNG x{isTriple && matches === 3 ? 5 : matches}
+                  </span>
+                )}
 
                 {/* Tổng phòng (góc trên phải, nhỏ + xám) */}
                 {roomTotal > 0 && (
@@ -374,13 +441,27 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
           })}
         </div>
 
-        {/* CƯỢC CỦA BẠN — bảng tổng kết */}
-        {isBetting && (
+        {/* CƯỢC CỦA BẠN — hiển ở mọi phase. Khi reveal có thêm delta per slot. */}
+        {(isBetting || myTotalBet > 0) && (
           <div style={{
-            background: myTotalBet > 0
-              ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.12) 0%, rgba(241, 196, 15, 0.02) 100%)'
-              : 'rgba(0,0,0,0.2)',
-            border: myTotalBet > 0 ? '1.5px solid rgba(241, 196, 15, 0.35)' : '1px dashed rgba(255,255,255,0.1)',
+            background: isRevealed
+              ? (me && me.resultDelta > 0
+                  ? 'linear-gradient(135deg, rgba(46, 204, 113, 0.14) 0%, rgba(46, 204, 113, 0.02) 100%)'
+                  : me && me.resultDelta < 0
+                    ? 'linear-gradient(135deg, rgba(231, 76, 60, 0.12) 0%, rgba(231, 76, 60, 0.02) 100%)'
+                    : 'rgba(0,0,0,0.2)')
+              : myTotalBet > 0
+                ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.12) 0%, rgba(241, 196, 15, 0.02) 100%)'
+                : 'rgba(0,0,0,0.2)',
+            border: isRevealed
+              ? (me && me.resultDelta > 0
+                  ? '1.5px solid rgba(46, 204, 113, 0.45)'
+                  : me && me.resultDelta < 0
+                    ? '1.5px solid rgba(231, 76, 60, 0.4)'
+                    : '1px dashed rgba(255,255,255,0.1)')
+              : myTotalBet > 0
+                ? '1.5px solid rgba(241, 196, 15, 0.35)'
+                : '1px dashed rgba(255,255,255,0.1)',
             borderRadius: '10px',
             padding: '10px 14px',
             display: 'flex',
@@ -389,24 +470,44 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
             flexWrap: 'wrap',
             minHeight: '44px',
           }}>
-            <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f1c40f', letterSpacing: 1, whiteSpace: 'nowrap' }}>
-              CƯỢC CỦA BẠN:
+            <span style={{
+              fontSize: '0.7rem',
+              fontWeight: 800,
+              color: isRevealed ? (me && me.resultDelta > 0 ? '#2ecc71' : me && me.resultDelta < 0 ? '#e74c3c' : '#f1c40f') : '#f1c40f',
+              letterSpacing: 1,
+              whiteSpace: 'nowrap',
+            }}>
+              {isRevealed ? 'KẾT QUẢ VÁN NÀY:' : 'CƯỢC CỦA BẠN:'}
             </span>
 
             {myTotalBet === 0 ? (
               <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                Chưa cược — click vào ô linh vật để đặt
+                {isBetting ? 'Chưa cược — click vào ô linh vật để đặt' : 'Bạn không tham gia ván này'}
               </span>
             ) : (
               <>
                 {Object.keys(myBets).map((k) => {
                   const idx = parseInt(k);
+                  const slotAmt = myBets[k];
+                  const matches = isRevealed ? (diceCount[idx] || 0) : 0;
+                  const isWinSlot = isRevealed && matches > 0;
+                  // Tính delta cho ô này khi đã reveal
+                  let slotDelta = 0;
+                  if (isRevealed) {
+                    if (matches > 0) {
+                      const mult = isTriple && matches === 3 ? 5 : matches;
+                      slotDelta = slotAmt * mult;
+                    } else {
+                      slotDelta = -slotAmt;
+                    }
+                  }
                   return (
                     <span key={k} style={{
                       display: 'inline-flex',
                       alignItems: 'center',
                       gap: '5px',
-                      background: 'rgba(255,255,255,0.08)',
+                      background: isWinSlot ? 'rgba(46,204,113,0.18)' : isRevealed ? 'rgba(231,76,60,0.10)' : 'rgba(255,255,255,0.08)',
+                      border: isWinSlot ? '1px solid rgba(46,204,113,0.4)' : '1px solid transparent',
                       padding: '4px 8px',
                       borderRadius: '14px',
                       fontSize: '0.75rem',
@@ -414,7 +515,17 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                       color: 'white',
                     }}>
                       <span style={{ fontSize: '0.9rem' }}>{BC_ICONS[idx]}</span>
-                      <span style={{ color: '#f1c40f' }}>{myBets[k]} xu</span>
+                      <span style={{ color: '#f1c40f' }}>{slotAmt}</span>
+                      {isRevealed && (
+                        <span style={{
+                          color: slotDelta > 0 ? '#2ecc71' : '#e74c3c',
+                          fontWeight: 900,
+                          fontSize: '0.72rem',
+                          marginLeft: 2,
+                        }}>
+                          {slotDelta > 0 ? `+${slotDelta}` : slotDelta}
+                        </span>
+                      )}
                     </span>
                   );
                 })}
@@ -424,20 +535,52 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                   alignItems: 'center',
                   gap: '10px',
                 }}>
-                  <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: 800 }}>
-                    Tổng: <span style={{ color: '#f1c40f' }}>{myTotalBet} xu</span>
-                  </span>
-                  <button
-                    onClick={handleClearMyBets}
-                    title="Xoá toàn bộ cược (hoàn xu)"
-                    className="btn btn-secondary"
-                    style={{ padding: '4px 8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    <Trash2 size={11} /> Xoá hết
-                  </button>
+                  {isRevealed && me ? (
+                    <span style={{ fontSize: '0.8rem', fontWeight: 900 }}>
+                      Tổng:{' '}
+                      <span style={{ color: me.resultDelta > 0 ? '#2ecc71' : me.resultDelta < 0 ? '#e74c3c' : '#f1c40f' }}>
+                        {me.resultDelta > 0 ? `+${me.resultDelta}` : me.resultDelta} xu
+                      </span>
+                    </span>
+                  ) : (
+                    <>
+                      <span style={{ fontSize: '0.75rem', color: 'white', fontWeight: 800 }}>
+                        Tổng: <span style={{ color: '#f1c40f' }}>{myTotalBet} xu</span>
+                      </span>
+                      {isBetting && (
+                        <button
+                          onClick={handleClearMyBets}
+                          title="Xoá toàn bộ cược (hoàn xu)"
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 8px', fontSize: '0.7rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        >
+                          <Trash2 size={11} /> Xoá hết
+                        </button>
+                      )}
+                    </>
+                  )}
                 </span>
               </>
             )}
+          </div>
+        )}
+
+        {/* Banner "chờ host mở ván mới" cho non-host khi đã reveal */}
+        {isRevealed && !isHost && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            background: 'rgba(124, 111, 255, 0.08)',
+            border: '1px dashed rgba(124, 111, 255, 0.3)',
+            borderRadius: '10px',
+            fontSize: '0.82rem',
+            fontWeight: 700,
+            color: 'rgba(255,255,255,0.75)',
+          }}>
+            ⏳ Chờ chủ phòng mở ván mới...
           </div>
         )}
       </div>
@@ -446,6 +589,8 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
 
   const renderDoDenBoard = () => {
     const isBetting = currentRoom.status === 'betting';
+    const isRevealed =
+      currentRoom.status === 'rolling' || currentRoom.status === 'finished';
     const gameState = currentRoom.gameState;
 
     const totalRed = players.filter(p => p.betChoice === 'red').reduce((sum, p) => sum + p.betAmount, 0);
@@ -453,6 +598,11 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
 
     const myColor = me?.betChoice ?? null;
     const myAmount = me?.betAmount ?? 0;
+    // Khi đã reveal: tính win/lose
+    const cardIsRed = gameState?.card?.isRed;
+    const myWonDoDen = isRevealed && myColor && cardIsRed !== undefined
+      ? (myColor === 'red') === cardIsRed
+      : null;
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', width: '100%', alignItems: 'center' }}>
@@ -608,15 +758,29 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
           </div>
         </div>
 
-        {/* CƯỢC CỦA BẠN — banner */}
-        {isBetting && (
+        {/* CƯỢC CỦA BẠN / KẾT QUẢ — hiển ở mọi phase */}
+        {(isBetting || myAmount > 0) && (
           <div style={{
             width: '100%',
             maxWidth: '380px',
-            background: myAmount > 0
-              ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.12) 0%, rgba(241, 196, 15, 0.02) 100%)'
-              : 'rgba(0,0,0,0.2)',
-            border: myAmount > 0 ? '1.5px solid rgba(241, 196, 15, 0.35)' : '1px dashed rgba(255,255,255,0.1)',
+            background: isRevealed
+              ? (myWonDoDen === true
+                  ? 'linear-gradient(135deg, rgba(46, 204, 113, 0.14) 0%, rgba(46, 204, 113, 0.02) 100%)'
+                  : myWonDoDen === false
+                    ? 'linear-gradient(135deg, rgba(231, 76, 60, 0.12) 0%, rgba(231, 76, 60, 0.02) 100%)'
+                    : 'rgba(0,0,0,0.2)')
+              : myAmount > 0
+                ? 'linear-gradient(135deg, rgba(241, 196, 15, 0.12) 0%, rgba(241, 196, 15, 0.02) 100%)'
+                : 'rgba(0,0,0,0.2)',
+            border: isRevealed
+              ? (myWonDoDen === true
+                  ? '1.5px solid rgba(46, 204, 113, 0.45)'
+                  : myWonDoDen === false
+                    ? '1.5px solid rgba(231, 76, 60, 0.4)'
+                    : '1px dashed rgba(255,255,255,0.1)')
+              : myAmount > 0
+                ? '1.5px solid rgba(241, 196, 15, 0.35)'
+                : '1px dashed rgba(255,255,255,0.1)',
             borderRadius: '10px',
             padding: '10px 14px',
             display: 'flex',
@@ -625,13 +789,20 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
             minHeight: '44px',
             justifyContent: 'space-between',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontSize: '0.7rem', fontWeight: 800, color: '#f1c40f', letterSpacing: 1 }}>
-                CƯỢC CỦA BẠN:
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{
+                fontSize: '0.7rem',
+                fontWeight: 800,
+                color: isRevealed
+                  ? (myWonDoDen === true ? '#2ecc71' : myWonDoDen === false ? '#e74c3c' : '#f1c40f')
+                  : '#f1c40f',
+                letterSpacing: 1,
+              }}>
+                {isRevealed ? 'KẾT QUẢ VÁN NÀY:' : 'CƯỢC CỦA BẠN:'}
               </span>
               {myAmount === 0 ? (
                 <span style={{ fontSize: '0.78rem', color: 'var(--color-text-muted)' }}>
-                  Chưa cược
+                  {isBetting ? 'Chưa cược' : 'Không tham gia ván này'}
                 </span>
               ) : (
                 <span style={{
@@ -651,11 +822,20 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                   <span style={{ color: 'rgba(255,255,255,0.6)', fontWeight: 600 }}>
                     vào {myColor === 'red' ? 'ĐỎ' : 'ĐEN'}
                   </span>
+                  {isRevealed && me && (
+                    <span style={{
+                      color: me.resultDelta > 0 ? '#2ecc71' : '#e74c3c',
+                      fontWeight: 900,
+                      marginLeft: 4,
+                    }}>
+                      {me.resultDelta > 0 ? `+${me.resultDelta}` : me.resultDelta}
+                    </span>
+                  )}
                 </span>
               )}
             </div>
 
-            {myAmount > 0 && (
+            {myAmount > 0 && isBetting && (
               <button
                 onClick={handleClearMyBets}
                 title="Xoá cược (hoàn xu)"
@@ -665,6 +845,27 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
                 <Trash2 size={11} /> Xoá
               </button>
             )}
+          </div>
+        )}
+
+        {/* Banner "chờ host mở ván mới" cho non-host */}
+        {isRevealed && !isHost && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '8px',
+            padding: '10px 16px',
+            background: 'rgba(124, 111, 255, 0.08)',
+            border: '1px dashed rgba(124, 111, 255, 0.3)',
+            borderRadius: '10px',
+            fontSize: '0.82rem',
+            fontWeight: 700,
+            color: 'rgba(255,255,255,0.75)',
+            maxWidth: '380px',
+            width: '100%',
+          }}>
+            ⏳ Chờ chủ phòng mở ván mới...
           </div>
         )}
       </div>
@@ -1025,26 +1226,58 @@ export const GameRoomView: React.FC<GameRoomViewProps> = ({ room, onLeave }) => 
         {isHost && (
           <div style={{ display: 'flex', gap: '10px', marginTop: '20px', width: '100%' }}>
             {currentRoom.gameType !== 'xi_jack' ? (
-              // Bầu cua & Đỏ đen host controls
-              <>
-                <button
-                  disabled={currentRoom.status === 'betting'}
-                  onClick={handleHostStartBetting}
-                  className="btn btn-secondary"
-                  style={{ flex: 1, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 700 }}
-                >
-                  <RotateCcw size={15} /> Mở cược ván mới
-                </button>
+              // Bầu cua & Đỏ đen host controls — nút "Mở ván mới" nhấn mạnh khi đã reveal
+              (() => {
+                const revealed = currentRoom.status === 'rolling' || currentRoom.status === 'finished';
+                return (
+                  <>
+                    <button
+                      disabled={currentRoom.status === 'betting'}
+                      onClick={handleHostStartBetting}
+                      className={revealed ? 'btn btn-primary' : 'btn btn-secondary'}
+                      style={{
+                        flex: revealed ? 2 : 1,
+                        height: revealed ? '50px' : '42px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '8px',
+                        fontSize: revealed ? '0.95rem' : '0.85rem',
+                        fontWeight: revealed ? 900 : 700,
+                        background: revealed
+                          ? 'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)'
+                          : undefined,
+                        color: revealed ? '#1a1138' : undefined,
+                        boxShadow: revealed ? '0 0 18px rgba(241,196,15,0.4)' : 'none',
+                        letterSpacing: revealed ? 1 : 0,
+                      }}
+                    >
+                      <RotateCcw size={revealed ? 18 : 15} />
+                      {revealed ? '🔄 MỞ VÁN MỚI' : 'Mở cược ván mới'}
+                    </button>
 
-                <button
-                  disabled={currentRoom.status !== 'betting'}
-                  onClick={handleHostRoll}
-                  className="btn btn-primary"
-                  style={{ flex: 1, height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '0.85rem', fontWeight: 800 }}
-                >
-                  <Play size={15} fill="white" /> {currentRoom.gameType === 'bau_cua' ? 'Lắc Xúc Xắc (Roll)' : 'Mở Bài (Flip Card)'}
-                </button>
-              </>
+                    <button
+                      disabled={currentRoom.status !== 'betting'}
+                      onClick={handleHostRoll}
+                      className="btn btn-primary"
+                      style={{
+                        flex: revealed ? 1 : 1,
+                        height: revealed ? '50px' : '42px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        fontSize: '0.85rem',
+                        fontWeight: 800,
+                        opacity: currentRoom.status !== 'betting' ? 0.4 : 1,
+                      }}
+                    >
+                      <Play size={15} fill="white" />
+                      {currentRoom.gameType === 'bau_cua' ? 'Lắc Xúc Xắc' : 'Mở Bài'}
+                    </button>
+                  </>
+                );
+              })()
             ) : (
               // Xì jack host controls
               <>
