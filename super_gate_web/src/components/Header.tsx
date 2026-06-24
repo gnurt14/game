@@ -2,6 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { Coins, Flame, Zap, LogOut, Gift, LogIn } from 'lucide-react';
 import { AuthService, PlayerModel } from '../services/authService';
 import { CoinService, CoinData } from '../services/coinService';
+import { HappyHourService } from '../services/happyHourService';
+import { JackpotService } from '../services/jackpotService';
+import { VipService, VipTier } from '../services/vipService';
+import { JackpotModal } from './JackpotModal';
+import { VipModal } from './VipModal';
 
 interface HeaderProps {
   onOpenDaily: () => void;
@@ -15,6 +20,16 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
   const [coinData, setCoinData] = useState<CoinData>(CoinService.getData());
   const [boosterTimeStr, setBoosterTimeStr] = useState<string>('');
 
+  // Meta state (Happy Hour / Jackpot / VIP)
+  const [hhActive, setHhActive] = useState<boolean>(HappyHourService.isActive());
+  const [hhRemaining, setHhRemaining] = useState<number | null>(HappyHourService.getRemainingSec());
+  const [hhMinsUntil, setHhMinsUntil] = useState<number>(HappyHourService.getMinutesUntilStart());
+  const [jackpotPool, setJackpotPool] = useState<number>(JackpotService.getPool());
+  const [myTickets, setMyTickets] = useState<number>(JackpotService.getMyTickets());
+  const [vipTier, setVipTier] = useState<VipTier>(VipService.getTier());
+  const [showJackpotModal, setShowJackpotModal] = useState<boolean>(false);
+  const [showVipModal, setShowVipModal] = useState<boolean>(false);
+
   useEffect(() => {
     const unsubAuth = AuthService.subscribe((p) => {
       setPlayer(p);
@@ -22,11 +37,30 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
     const unsubCoins = CoinService.subscribe((data) => {
       setCoinData(data);
     });
+    const unsubJackpot = JackpotService.subscribe(() => {
+      setJackpotPool(JackpotService.getPool());
+      setMyTickets(JackpotService.getMyTickets());
+    });
+    const unsubVip = VipService.subscribe(() => {
+      setVipTier(VipService.getTier());
+    });
 
     return () => {
       unsubAuth();
       unsubCoins();
+      unsubJackpot();
+      unsubVip();
     };
+  }, []);
+
+  // Happy Hour tick — refresh trạng thái mỗi giây
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setHhActive(HappyHourService.isActive());
+      setHhRemaining(HappyHourService.getRemainingSec());
+      setHhMinsUntil(HappyHourService.getMinutesUntilStart());
+    }, 1000);
+    return () => clearInterval(timer);
   }, []);
 
   // Update booster timer
@@ -66,6 +100,110 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
     }
   };
 
+  const formatHhRemaining = (sec: number | null): string => {
+    if (sec === null) return '';
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
+
+  // Widget Happy Hour — banner đỏ-cam nhấp nháy khi active, hoặc nhắc khi < 1h
+  const renderHappyHour = () => {
+    if (hhActive) {
+      return (
+        <div
+          title="Happy Hour: x2 thưởng cho mọi game cờ bạc!"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '10px',
+            background: 'linear-gradient(135deg, #ff3d00 0%, #ff9800 100%)',
+            color: 'white',
+            fontWeight: 800,
+            fontSize: '0.85rem',
+            boxShadow: '0 0 12px rgba(255, 87, 34, 0.6)',
+            animation: 'pulse-primary 1.2s ease-in-out infinite',
+          }}
+        >
+          🔥 HAPPY HOUR x2 — còn {formatHhRemaining(hhRemaining)}
+        </div>
+      );
+    }
+    if (hhMinsUntil > 0 && hhMinsUntil < 60) {
+      return (
+        <div
+          title={`Happy Hour sắp bắt đầu lúc ${HappyHourService.getStartLabel()}`}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            padding: '6px 12px',
+            borderRadius: '10px',
+            background: 'rgba(255, 87, 34, 0.12)',
+            border: '1px solid rgba(255, 87, 34, 0.35)',
+            color: '#ff8a65',
+            fontWeight: 700,
+            fontSize: '0.8rem',
+          }}
+        >
+          🔥 Happy Hour: {hhMinsUntil} phút nữa
+        </div>
+      );
+    }
+    return null;
+  };
+
+  // Widget Jackpot
+  const renderJackpot = () => (
+    <div
+      onClick={() => setShowJackpotModal(true)}
+      className="glass-interactive"
+      title="Daily Jackpot — click để xem chi tiết"
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 12px',
+        borderRadius: '10px',
+        background: 'linear-gradient(135deg, rgba(255, 215, 0, 0.15) 0%, rgba(255, 165, 0, 0.15) 100%)',
+        border: '1px solid rgba(241, 196, 15, 0.35)',
+        cursor: 'pointer',
+        fontWeight: 700,
+        fontSize: '0.85rem',
+        color: '#f1c40f',
+      }}
+    >
+      🎰 {jackpotPool.toLocaleString()} ({myTickets} vé)
+    </div>
+  );
+
+  // Widget VIP
+  const renderVipBadge = () => (
+    <div
+      onClick={() => setShowVipModal(true)}
+      className="glass-interactive"
+      title={`VIP ${vipTier.label} — click để xem chi tiết`}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '6px 12px',
+        borderRadius: '10px',
+        background: `linear-gradient(135deg, ${vipTier.color}33 0%, ${vipTier.color}11 100%)`,
+        border: `1px solid ${vipTier.color}`,
+        cursor: 'pointer',
+        fontWeight: 800,
+        fontSize: '0.8rem',
+        color: vipTier.color,
+        letterSpacing: 1,
+      }}
+    >
+      {vipTier.emoji} {vipTier.label}
+    </div>
+  );
+
   const getFrameLabel = (frameId: string) => {
     switch (frameId) {
       case 'gold': return 'Khung Hoàng Kim';
@@ -96,6 +234,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
               <Coins color="#f1c40f" size={18} />
               <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#f1c40f' }}>{coinData.balance.toLocaleString()} xu</span>
             </div>
+
+            {/* Meta widgets: Happy Hour / Jackpot / VIP */}
+            {renderHappyHour()}
+            {renderJackpot()}
+            {renderVipBadge()}
 
             {/* Streak Daily */}
             <div 
@@ -183,6 +326,11 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
               <span style={{ fontWeight: 700, fontSize: '0.95rem', color: '#f1c40f' }}>{coinData.balance.toLocaleString()} xu</span>
             </div>
 
+            {/* Meta widgets cho khách */}
+            {renderHappyHour()}
+            {renderJackpot()}
+            {renderVipBadge()}
+
             {/* Streak Daily */}
             <div
               onClick={onOpenDaily}
@@ -261,6 +409,10 @@ export const Header: React.FC<HeaderProps> = ({ onOpenDaily, onOpenWheel, onOpen
           </>
         )}
       </div>
+
+      {/* Modals */}
+      {showJackpotModal && <JackpotModal onClose={() => setShowJackpotModal(false)} />}
+      {showVipModal && <VipModal onClose={() => setShowVipModal(false)} />}
     </header>
   );
 };
