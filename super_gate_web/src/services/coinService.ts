@@ -691,28 +691,37 @@ export class CoinService {
       localStorage.setItem(this.KEYS.lastWheelSpinDate, this.getTodayStr());
     }
 
-    // Tỷ lệ quay thưởng:
-    // 35% - 20 xu
-    // 25% - 50 xu
-    // 15% - 1 Streak Shield (Lá chắn)
-    // 12% - 2h Booster x2
-    // 10% - 120 xu
-    // 3% - 500 xu (Jackpot)
+    // Tỷ lệ vòng quay (8 ô, EV ~29 xu, house edge ~3% paid spin):
+    //  38% - Hụt (0 xu)        — cảm giác mất nhẹ
+    //  25% - 10 xu              — an ủi
+    //  15% - 25 xu              — gần break-even paid spin
+    //   8% - 50 xu              — lời nhẹ
+    //   6% - 1 Lá chắn          — tiện ích
+    //   4% - Booster 1h         — tiện ích nhỏ
+    //   3% - 150 xu             — phần thưởng to
+    //   1% - 1000 xu Jackpot    — phần thưởng đỉnh
     const roll = Math.floor(Math.random() * 100);
     let rewardCoins = 0;
     let rewardLabel = '';
 
     const player = AuthService.getPlayer();
 
-    if (roll < 35) {
-      rewardCoins = 20;
-      rewardLabel = '20 Xu';
+    if (roll < 38) {
+      rewardCoins = 0;
+      rewardLabel = 'Hụt';
+    } else if (roll < 63) {
+      rewardCoins = 10;
+      rewardLabel = '10 Xu';
       await this.addCoins(rewardCoins);
-    } else if (roll < 60) {
+    } else if (roll < 78) {
+      rewardCoins = 25;
+      rewardLabel = '25 Xu';
+      await this.addCoins(rewardCoins);
+    } else if (roll < 86) {
       rewardCoins = 50;
       rewardLabel = '50 Xu';
       await this.addCoins(rewardCoins);
-    } else if (roll < 75) {
+    } else if (roll < 92) {
       const newShields = data.shieldCount + 1;
       rewardLabel = '1 Lá Chắn';
       if (player) {
@@ -722,23 +731,23 @@ export class CoinService {
       } else {
         localStorage.setItem(this.KEYS.shieldCount, String(newShields));
       }
-    } else if (roll < 87) {
-      const expiry = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-      rewardLabel = 'Booster x2 (2h)';
+    } else if (roll < 96) {
+      const expiry = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+      rewardLabel = 'Booster x2 (1h)';
       if (player) {
         const updated: PlayerModel = { ...player, boosterExpiryAt: expiry };
         AuthService.setPlayer(updated);
         this.scheduleSync({ boosterExpiryAt: expiry });
       } else {
-        localStorage.setItem(this.KEYS.boosterExpiry, String(Date.now() + 2 * 60 * 60 * 1000));
+        localStorage.setItem(this.KEYS.boosterExpiry, String(Date.now() + 60 * 60 * 1000));
       }
-    } else if (roll < 97) {
-      rewardCoins = 120;
-      rewardLabel = '120 Xu';
+    } else if (roll < 99) {
+      rewardCoins = 150;
+      rewardLabel = '150 Xu';
       await this.addCoins(rewardCoins);
     } else {
-      rewardCoins = 500;
-      rewardLabel = 'Jackpot 500 Xu';
+      rewardCoins = 1000;
+      rewardLabel = 'Jackpot 1000 Xu';
       await this.addCoins(rewardCoins);
     }
 

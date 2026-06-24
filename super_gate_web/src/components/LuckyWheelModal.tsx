@@ -8,14 +8,20 @@ interface LuckyWheelModalProps {
   onClose: () => void;
 }
 
+// 8 ô (45° mỗi ô) — đồng bộ với rate trong CoinService.spinLuckyWheel
 const WHEEL_ITEMS = [
-  { label: '20 Xu', color: '#1b1635', text: '🪙 20 xu' },
-  { label: '50 Xu', color: '#7c6fff', text: '🪙 50 xu' },
-  { label: '1 Lá Chắn', color: '#00bcd4', text: '🛡️ Lá chắn' },
-  { label: 'Booster x2 (2h)', color: '#ff6b35', text: '⚡ Booster x2' },
-  { label: '120 Xu', color: '#9c27b0', text: '🪙 120 xu' },
-  { label: 'Jackpot 500 Xu', color: '#f1c40f', text: '👑 Jackpot' },
+  { label: 'Hụt',             color: '#3a3a3a', text: '💸 Hụt' },
+  { label: '10 Xu',           color: '#3498db', text: '🪙 10' },
+  { label: '25 Xu',           color: '#2980b9', text: '🪙 25' },
+  { label: '50 Xu',           color: '#27ae60', text: '🪙 50' },
+  { label: '1 Lá Chắn',       color: '#16a085', text: '🛡️ Chắn' },
+  { label: 'Booster x2 (1h)', color: '#e67e22', text: '⚡ x2' },
+  { label: '150 Xu',          color: '#8e44ad', text: '🪙 150' },
+  { label: 'Jackpot 1000 Xu', color: '#f1c40f', text: '👑 1000' },
 ];
+
+const SEGMENT_COUNT = WHEEL_ITEMS.length;
+const SEGMENT_DEG = 360 / SEGMENT_COUNT;
 
 const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
   const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
@@ -78,13 +84,10 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({ isOpen, onClos
       const itemIndex = WHEEL_ITEMS.findIndex((item) => item.label === label);
       if (itemIndex === -1) throw new Error('Không xác định được phần thưởng');
 
-      // Calculate degrees
-      // 6 segments, each segment is 60 degrees.
-      // We align the MIDPOINT of the target segment with the top needle (which is at 0 deg).
-      // Midpoint of segment i is at (i * 60 + 30) degrees.
-      // To bring it to the top (0 deg), we rotate the wheel clockwise by 360 - midAngle.
-      const extraSpins = 5; // Spin 5 times
-      const midAngle = itemIndex * 60 + 30;
+      // Calculate degrees — N segments × (360/N) deg mỗi ô.
+      // Midpoint của ô i ở (i * SEG + SEG/2) deg. Đưa về 0 deg (kim trên) → rotate (360 - mid).
+      const extraSpins = 5;
+      const midAngle = itemIndex * SEGMENT_DEG + SEGMENT_DEG / 2;
       const targetDeg = extraSpins * 360 + (360 - midAngle);
 
       setRotation(targetDeg);
@@ -166,21 +169,21 @@ export const LuckyWheelModal: React.FC<LuckyWheelModalProps> = ({ isOpen, onClos
             <svg viewBox="0 0 200 200" style={{ width: '100%', height: '100%', display: 'block' }}>
               <g>
                 {WHEEL_ITEMS.map((item, idx) => {
-                  const startAngle = idx * 60;
-                  const endAngle = (idx + 1) * 60;
-                  const midAngle = startAngle + 30;
-                  const textPos = polarToCartesian(100, 100, 62, midAngle);
+                  const startAngle = idx * SEGMENT_DEG;
+                  const endAngle = (idx + 1) * SEGMENT_DEG;
+                  const midAngle = startAngle + SEGMENT_DEG / 2;
+                  const textPos = polarToCartesian(100, 100, 66, midAngle);
                   const pathD = describeArc(100, 100, 100, startAngle, endAngle);
-                  
+
                   return (
                     <g key={idx}>
-                      <path d={pathD} fill={item.color} stroke="rgba(255, 255, 255, 0.15)" strokeWidth="1" />
+                      <path d={pathD} fill={item.color} stroke="rgba(255, 255, 255, 0.18)" strokeWidth="0.8" />
                       <text
                         x={textPos.x}
                         y={textPos.y}
                         fill="white"
                         fontWeight="800"
-                        fontSize="9.5px"
+                        fontSize="8.5px"
                         textAnchor="middle"
                         dominantBaseline="middle"
                         transform={`rotate(${midAngle}, ${textPos.x}, ${textPos.y})`}
