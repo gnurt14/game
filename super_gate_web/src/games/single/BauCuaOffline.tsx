@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Play, RotateCcw, Trash2 } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
 import { StreakService } from '../../services/streakService';
-import { DoubleUpUniversalModal } from '../../components/DoubleUpUniversalModal';
 import { ComebackModal } from '../../components/ComebackModal';
 import confetti from 'canvas-confetti';
 
@@ -30,9 +29,7 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
   const [message, setMessage] = useState<string>('Hãy đặt cược vào các ô linh vật!');
   const [winDelta, setWinDelta] = useState<number | null>(null);
 
-  // Double-up + streak state
-  const [doubleUpOpen, setDoubleUpOpen] = useState<boolean>(false);
-  const [doubleUpBase, setDoubleUpBase] = useState<number>(0);
+  // Streak state — Bầu Cua KHÔNG có cơ chế gấp đôi (chỉ Đỏ Đen có).
   const [winStreak, setWinStreak] = useState<number>(
     StreakService.getWinStreak('bau_cua'),
   );
@@ -76,17 +73,6 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
 
   const handleComebackContinue = () => {
     setComebackOpen(false);
-  };
-
-  const handleDoubleUpClaim = async (finalAmount: number) => {
-    setDoubleUpOpen(false);
-    if (finalAmount > 0) {
-      await CoinService.earnCoins(finalAmount);
-      setMessage(`💰 Đã nhận ${finalAmount} xu vào ví!`);
-    } else {
-      setMessage('💸 Đã mất thưởng do gấp đôi. Đặt cược ván mới?');
-    }
-    setDoubleUpBase(0);
   };
 
   const handleClearBets = async () => {
@@ -220,7 +206,7 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
             ? ` (x${mult * comebackBonus} bonus!)`
             : '';
         setMessage(
-          `🎉 Thắng ròng +${boostedProfit} xu${mulLabel}! Treo gấp đôi hoặc nhận?`,
+          `🎉 Thắng ròng +${boostedProfit} xu${mulLabel}!`,
         );
         setShowWinFlash(true);
         setTimeout(() => setShowWinFlash(false), 1500);
@@ -228,14 +214,14 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
         setTimeout(() => confetti({ particleCount: 60, spread: 60, origin: { x: 0.7, y: 0.6 } }), 200);
         setTimeout(() => confetti({ particleCount: 40, spread: 90, origin: { x: 0.5, y: 0.4 } }), 400);
 
+        // Trả thẳng lời boosted vào ví — Bầu Cua KHÔNG có gấp đôi.
+        await CoinService.earnCoins(boostedProfit);
+        setWinDelta(boostedProfit);
+
         // Track streak
         StreakService.recordWin('bau_cua');
         setWinStreak(StreakService.getWinStreak('bau_cua'));
         setComebackShownThisLoss(false);
-
-        // Mở DoubleUp modal với baseAmount = lời ròng đã boost.
-        setDoubleUpBase(boostedProfit);
-        setDoubleUpOpen(true);
       } else if (totalWin > 0) {
         // Hòa vốn — refund toàn bộ winning portion.
         await CoinService.earnCoins(totalWin);
@@ -488,15 +474,9 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
         </div>
 
         <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-          💡 Chọn chip cược rồi nhấn vào các ô linh vật để đặt cược. Nhấn "Lắc Đĩa" để máy quay xúc xắc. Trùng 1 nhận x1 cược, trùng 2 x2, trùng 3 x3 và được hoàn trả lại tiền gốc cược trúng. Có thể 🎰 Gấp Đôi sau khi thắng ròng!
+          💡 Chọn chip cược rồi nhấn vào các ô linh vật để đặt cược. Nhấn "Lắc Đĩa" để máy quay xúc xắc. Trùng 1 nhận x1 cược, trùng 2 x2, trùng 3 x3 và được hoàn trả lại tiền gốc cược trúng.
         </div>
       </div>
-
-      <DoubleUpUniversalModal
-        isOpen={doubleUpOpen}
-        baseAmount={doubleUpBase}
-        onClaim={handleDoubleUpClaim}
-      />
 
       <ComebackModal
         isOpen={comebackOpen}

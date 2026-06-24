@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Play, Plus, Square } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
 import { StreakService } from '../../services/streakService';
-import { DoubleUpUniversalModal } from '../../components/DoubleUpUniversalModal';
 import { ComebackModal } from '../../components/ComebackModal';
 import { buildXjDeck, xjHandValue } from '../../services/roomService';
 import confetti from 'canvas-confetti';
@@ -24,9 +23,7 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
   const [bustShake, setBustShake] = useState<boolean>(false);
   const [thinkingText, setThinkingText] = useState<string>('.');
 
-  // Double-up + streak state
-  const [doubleUpOpen, setDoubleUpOpen] = useState<boolean>(false);
-  const [doubleUpBase, setDoubleUpBase] = useState<number>(0);
+  // Streak state — Xì Jack KHÔNG có cơ chế gấp đôi (chỉ Đỏ Đen có).
   const [winStreak, setWinStreak] = useState<number>(
     StreakService.getWinStreak('xi_jack'),
   );
@@ -86,38 +83,21 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
     setComebackOpen(false);
   };
 
-  const handleDoubleUpClaim = async (finalAmount: number) => {
-    setDoubleUpOpen(false);
-    if (finalAmount > 0) {
-      await CoinService.earnCoins(finalAmount);
-      setMessage(`💰 Đã nhận ${finalAmount} xu vào ví!`);
-    } else {
-      setMessage('💸 Đã mất thưởng do gấp đôi.');
-    }
-    setDoubleUpBase(0);
-  };
-
   /**
-   * Helper: handle thắng thường (không phải Ngũ Linh/Blackjack) — apply streak +
-   * comeback multiplier, mở DoubleUp modal cho phần lời. Stake gốc đã trả lại
-   * không qua DoubleUp.
+   * Helper: payout thắng thường — apply streak + comeback multiplier vào lời,
+   * trả thẳng (gốc + lời boosted) về ví. KHÔNG dùng cơ chế gấp đôi ở Xì Jack.
    */
-  const _routeProfitToDoubleUp = (profitBase: number, stakeReturn: number) => {
+  const _payoutWin = async (profitBase: number, stakeReturn: number) => {
     const mult = StreakService.getMultiplier('xi_jack');
     const comebackBonus = StreakService.consumeComebackBonus('xi_jack') ? 2 : 1;
     const boostedProfit = Math.round(profitBase * mult * comebackBonus);
 
-    // Refund stake gốc về ví NGAY (không treo trong DoubleUp).
-    if (stakeReturn > 0) {
-      CoinService.earnCoins(stakeReturn);
-    }
+    await CoinService.earnCoins(stakeReturn + boostedProfit);
 
     StreakService.recordWin('xi_jack');
     setWinStreak(StreakService.getWinStreak('xi_jack'));
     setComebackShownThisLoss(false);
-
-    setDoubleUpBase(boostedProfit);
-    setDoubleUpOpen(true);
+    setWinDelta(boostedProfit);
   };
 
   const handleClearBets = async () => {
@@ -267,18 +247,15 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
     }
 
     if (dVal > 21) {
-      // Dealer bust — apply multiplier vào lời, offer double-up.
-      setWinDelta(capturedBet);
-      setMessage(`🎉 Nhà cái BUST (${dVal}đ)! Treo lời gấp đôi hoặc nhận?`);
+      setMessage(`🎉 Nhà cái BUST (${dVal}đ)! Bạn thắng cược.`);
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
-      _routeProfitToDoubleUp(capturedBet, capturedBet);
+      await _payoutWin(capturedBet, capturedBet);
     } else if (pVal > dVal) {
-      setWinDelta(capturedBet);
-      setMessage(`🏆 Bạn thắng ${pVal}đ vs ${dVal}đ! Treo lời gấp đôi hoặc nhận?`);
+      setMessage(`🏆 Bạn thắng ${pVal}đ vs ${dVal}đ!`);
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
-      _routeProfitToDoubleUp(capturedBet, capturedBet);
+      await _payoutWin(capturedBet, capturedBet);
     } else if (pVal < dVal) {
       setWinDelta(-capturedBet);
       setMessage(`💸 Bạn thua. Nhà cái đạt ${dVal}đ so với Hand ${pVal}đ.`);
@@ -611,15 +588,9 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
         )}
 
         <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-          💡 Luật chơi: Rút bài đạt điểm gần 21 nhất nhưng không vượt quá 21. Nhà cái bắt buộc rút nếu dưới 17 điểm. Xì Jack (Blackjack) ăn 1.5x cược gốc. 🌟 Ngũ Linh (5 lá ≤21) thắng tuyệt đối, ăn x2 cược. Thắng thường có thể 🎰 Gấp Đôi!
+          💡 Luật chơi: Rút bài đạt điểm gần 21 nhất nhưng không vượt quá 21. Nhà cái bắt buộc rút nếu dưới 17 điểm. Xì Jack (Blackjack) ăn 1.5x cược gốc. 🌟 Ngũ Linh (5 lá ≤21) thắng tuyệt đối, ăn x2 cược.
         </div>
       </div>
-
-      <DoubleUpUniversalModal
-        isOpen={doubleUpOpen}
-        baseAmount={doubleUpBase}
-        onClaim={handleDoubleUpClaim}
-      />
 
       <ComebackModal
         isOpen={comebackOpen}
