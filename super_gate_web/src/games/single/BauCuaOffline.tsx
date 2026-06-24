@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Play, RotateCcw, Trash2 } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
+import { InsuranceModal } from '../../components/InsuranceModal';
+import { BigWinFeed } from '../../components/BigWinFeed';
+import { AuthService } from '../../services/authService';
 import confetti from 'canvas-confetti';
 
 interface BauCuaOfflineProps {
@@ -26,6 +29,10 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
   const [showWinFlash, setShowWinFlash] = useState<boolean>(false);
   const [message, setMessage] = useState<string>('Hãy đặt cược vào các ô linh vật!');
   const [winDelta, setWinDelta] = useState<number | null>(null);
+
+  // Insurance state — only used when total bet ≥ 100. Premium charged on purchase.
+  const [insuranceOpen, setInsuranceOpen] = useState<boolean>(false);
+  const [insurance, setInsurance] = useState<{ premium: number; refundPct: number } | null>(null);
 
   useEffect(() => {
     setBalance(CoinService.getData().balance);
@@ -79,6 +86,16 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
       return;
     }
 
+    // Pre-reveal insurance gate: only offer when stake is meaningful (≥ 100)
+    if (totalBetAmount >= 100 && insurance === null) {
+      setInsuranceOpen(true);
+      return;
+    }
+
+    proceedRoll();
+  };
+
+  const proceedRoll = () => {
     setIsShaking(true);
     setShakeFast(false);
     setDiceResults(null);
@@ -160,30 +177,88 @@ export const BauCuaOffline: React.FC<BauCuaOfflineProps> = ({ onClose }) => {
     const netResult = totalWin - capturedTotal;
     setWinDelta(netResult);
 
+    // Capture insurance snapshot once — premium has already been paid up-front,
+    // so here we only need to refund on loss / disclose the deduction on win.
+    const insSnapshot = insurance;
+
     // Delay payouts until all dice revealed
     setTimeout(async () => {
       if (totalWin > 0) {
         await CoinService.earnCoins(totalWin);
         if (netResult > 0) {
-          setMessage(`🎉 Chúc mừng! Bạn thắng ròng +${netResult} xu!`);
+          const profitAfterPremium = insSnapshot ? netResult - insSnapshot.premium : netResult;
+          setMessage(
+            insSnapshot
+              ? `🎉 Thắng +${netResult} xu (đã trừ phí BH ${insSnapshot.premium} → còn +${profitAfterPremium})!`
+              : `🎉 Chúc mừng! Bạn thắng ròng +${netResult} xu!`,
+          );
           setShowWinFlash(true);
           setTimeout(() => setShowWinFlash(false), 1500);
           confetti({ particleCount: 80, spread: 70, origin: { x: 0.3, y: 0.6 } });
           setTimeout(() => confetti({ particleCount: 60, spread: 60, origin: { x: 0.7, y: 0.6 } }), 200);
           setTimeout(() => confetti({ particleCount: 40, spread: 90, origin: { x: 0.5, y: 0.4 } }), 400);
+
+          // Report to global big-win feed
+          if (netResult > 500) {
+            const name = AuthService.getPlayer()?.displayName || 'Khách';
+            BigWinFeed.report(name, netResult, 'Bầu Cua');
+          }
         } else {
           setMessage(`🤝 Hòa vốn (Hoàn trả ${totalWin} xu cược).`);
         }
       } else {
-        setMessage(`💸 Bạn đã mất ${capturedTotal} xu cược. Chúc bạn may mắn lần sau!`);
+        // Loss path — apply insurance refund if purchased
+        if (insSnapshot) {
+          const refund = Math.round(capturedTotal * insSnapshot.refundPct);
+          if (refund > 0) {
+            await CoinService.earnCoins(refund);
+            setMessage(`🛡️ Thua nhưng bảo hiểm hoàn trả ${refund} xu (mất ròng ${capturedTotal - refund + insSnapshot.premium}).`);
+          } else {
+            setMessage(`💸 Bạn đã mất ${capturedTotal} xu cược. Chúc bạn may mắn lần sau!`);
+          }
+        } else {
+          setMessage(`💸 Bạn đã mất ${capturedTotal} xu cược. Chúc bạn may mắn lần sau!`);
+        }
       }
       setBets({ 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 });
+      setInsurance(null);
       await CoinService.recordGamePlayed('Bầu Cua Offline');
     }, 900);
   };
 
+  const handleInsurancePurchase = async (premium: number, refundPct: number) => {
+    // Charge the premium right now
+    const balance = CoinService.getData().balance;
+    if (balance < premium) {
+      alert('❌ Không đủ xu mua bảo hiểm!');
+      setInsuranceOpen(false);
+      return;
+    }
+    const ok = await CoinService.spendCoins(premium);
+    if (!ok) {
+      alert('❌ Không thể trừ phí bảo hiểm.');
+      setInsuranceOpen(false);
+      return;
+    }
+    setInsurance({ premium, refundPct });
+    setInsuranceOpen(false);
+    proceedRoll();
+  };
+
+  const handleInsuranceSkip = () => {
+    setInsurance(null);
+    setInsuranceOpen(false);
+    proceedRoll();
+  };
+
   return (
     <div className="glass fullscreen-game-container">
+      <InsuranceModal
+        isOpen={insuranceOpen}
+        betAmount={totalBetAmount}
+        onPurchase={handleInsurancePurchase}
+        onSkip={handleInsuranceSkip}
+      />
       <style>{`
         @keyframes bc-shake-slow { 0%,100%{transform:translateY(0) rotate(0deg)} 25%{transform:translateY(-7px) rotate(-4deg)} 75%{transform:translateY(-7px) rotate(4deg)} }
         @keyframes bc-shake-fast { 0%,100%{transform:translateY(0) rotate(0deg)} 25%{transform:translateY(-14px) rotate(-8deg)} 75%{transform:translateY(-14px) rotate(8deg)} }

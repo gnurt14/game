@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Play, Plus, Square } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
 import { buildXjDeck, xjHandValue } from '../../services/roomService';
+import { InsuranceModal } from '../../components/InsuranceModal';
+import { BigWinFeed } from '../../components/BigWinFeed';
+import { AuthService } from '../../services/authService';
 import confetti from 'canvas-confetti';
 
 interface XiJackOfflineProps {
@@ -20,6 +23,10 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
   const [winDelta, setWinDelta] = useState<number | null>(null);
   const [bustShake, setBustShake] = useState<boolean>(false);
   const [thinkingText, setThinkingText] = useState<string>('.');
+
+  // Insurance state — captured at Deal time
+  const [insuranceOpen, setInsuranceOpen] = useState<boolean>(false);
+  const [insurance, setInsurance] = useState<{ premium: number; refundPct: number } | null>(null);
 
   useEffect(() => {
     setBalance(CoinService.getData().balance);
@@ -71,6 +78,16 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       return;
     }
 
+    // Pre-reveal insurance gate
+    if (betAmount >= 100 && insurance === null) {
+      setInsuranceOpen(true);
+      return;
+    }
+
+    proceedDeal();
+  };
+
+  const proceedDeal = () => {
     const seed = Math.floor(Math.random() * 100000);
     const newDeck = buildXjDeck(seed);
 
@@ -106,15 +123,21 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
     } else if (isPlayerBJ) {
       const winPayout = Math.round(capturedBet * 2.5);
       await CoinService.earnCoins(winPayout);
-      setWinDelta(winPayout - capturedBet);
-      setMessage(`🏆 Blackjack! Bạn thắng +${winPayout - capturedBet} xu thưởng!`);
+      const profit = winPayout - capturedBet;
+      setWinDelta(profit);
+      setMessage(`🏆 Blackjack! Bạn thắng +${profit} xu thưởng!`);
       confetti({ particleCount: 100, spread: 90, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 80, spread: 70, origin: { x: 0.7, y: 0.6 } }), 200);
       setTimeout(() => confetti({ particleCount: 60, spread: 110, origin: { x: 0.5, y: 0.3 } }), 400);
+      reportBigWin(profit);
     } else {
-      setWinDelta(-capturedBet);
-      setMessage('💸 Nhà cái đạt Blackjack (Xì Jack). Bạn thua ván này.');
+      const refund = await applyInsuranceOnLoss(capturedBet);
+      setWinDelta(-capturedBet + refund);
+      setMessage(refund > 0
+        ? `🛡️ Nhà cái đạt Blackjack. Bảo hiểm hoàn ${refund} xu.`
+        : '💸 Nhà cái đạt Blackjack (Xì Jack). Bạn thua ván này.');
     }
+    setInsurance(null);
     await CoinService.recordGamePlayed('Xì Jack Offline');
   };
 
@@ -133,11 +156,17 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
     const nextVal = xjHandValue(nextHand);
     if (nextVal > 21) {
       setPhase('resolved');
-      setWinDelta(-betAmount);
       setBustShake(true);
       setTimeout(() => setBustShake(false), 600);
-      setMessage(`💥 Quá 21 điểm (${nextVal}đ)! Bạn bị BUST và thua cược.`);
-      CoinService.recordGamePlayed('Xì Jack Offline');
+      (async () => {
+        const refund = await applyInsuranceOnLoss(betAmount);
+        setWinDelta(-betAmount + refund);
+        setMessage(refund > 0
+          ? `💥 BUST ${nextVal}đ! Bảo hiểm hoàn ${refund} xu.`
+          : `💥 Quá 21 điểm (${nextVal}đ)! Bạn bị BUST và thua cược.`);
+        setInsurance(null);
+        await CoinService.recordGamePlayed('Xì Jack Offline');
+      })();
     } else if (nextHand.length === 5) {
       // 5 lá ≤21 = Ngũ Linh → ép stand, qua dealer turn để hoàn tất ván.
       setMessage(`🌟 Bạn đã đạt Ngũ Linh (${nextVal}đ với 5 lá)! Đang xử lý...`);
@@ -188,6 +217,8 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       confetti({ particleCount: 120, spread: 100, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 100, spread: 80, origin: { x: 0.7, y: 0.6 } }), 200);
       setTimeout(() => confetti({ particleCount: 80, spread: 120, origin: { x: 0.5, y: 0.3 } }), 400);
+      reportBigWin(profit);
+      setInsurance(null);
       await CoinService.recordGamePlayed('Xì Jack Offline');
       return;
     }
@@ -199,6 +230,7 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       setMessage(`🎉 Nhà cái BUST (${dVal}đ)! Bạn thắng +${capturedBet} xu!`);
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
+      reportBigWin(capturedBet);
     } else if (pVal > dVal) {
       const winPayout = capturedBet * 2;
       await CoinService.earnCoins(winPayout);
@@ -206,15 +238,20 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       setMessage(`🏆 Bạn thắng! Hand đạt ${pVal}đ so với Nhà cái ${dVal}đ (+${capturedBet} xu).`);
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
+      reportBigWin(capturedBet);
     } else if (pVal < dVal) {
-      setWinDelta(-capturedBet);
-      setMessage(`💸 Bạn thua. Nhà cái đạt ${dVal}đ so với Hand ${pVal}đ.`);
+      const refund = await applyInsuranceOnLoss(capturedBet);
+      setWinDelta(-capturedBet + refund);
+      setMessage(refund > 0
+        ? `🛡️ Thua (${pVal} vs ${dVal}). Bảo hiểm hoàn ${refund} xu.`
+        : `💸 Bạn thua. Nhà cái đạt ${dVal}đ so với Hand ${pVal}đ.`);
     } else {
       await CoinService.earnCoins(capturedBet);
       setWinDelta(0);
       setMessage(`🤝 Hòa (Push)! Cả hai cùng đạt ${pVal} điểm.`);
     }
 
+    setInsurance(null);
     await CoinService.recordGamePlayed('Xì Jack Offline');
   };
 
@@ -225,7 +262,49 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
     setPhase('betting');
     setWinDelta(null);
     setBustShake(false);
+    setInsurance(null);
     setMessage('🪙 Đặt cược để bắt đầu chia bài!');
+  };
+
+  const handleInsurancePurchase = async (premium: number, refundPct: number) => {
+    const balance = CoinService.getData().balance;
+    if (balance < premium) {
+      alert('❌ Không đủ xu mua bảo hiểm!');
+      setInsuranceOpen(false);
+      return;
+    }
+    const ok = await CoinService.spendCoins(premium);
+    if (!ok) {
+      alert('❌ Không thể trừ phí bảo hiểm.');
+      setInsuranceOpen(false);
+      return;
+    }
+    setInsurance({ premium, refundPct });
+    setInsuranceOpen(false);
+    proceedDeal();
+  };
+
+  const handleInsuranceSkip = () => {
+    setInsurance(null);
+    setInsuranceOpen(false);
+    proceedDeal();
+  };
+
+  /** Apply insurance refund if active; idempotent across resolution paths. */
+  const applyInsuranceOnLoss = async (lostBet: number): Promise<number> => {
+    if (!insurance) return 0;
+    const refund = Math.round(lostBet * insurance.refundPct);
+    if (refund > 0) {
+      await CoinService.earnCoins(refund);
+    }
+    return refund;
+  };
+
+  const reportBigWin = (profit: number) => {
+    if (profit > 500) {
+      const name = AuthService.getPlayer()?.displayName || 'Khách';
+      BigWinFeed.report(name, profit, 'Xì Jack');
+    }
   };
 
   const drawCard = (card: string, isHidden: boolean = false) => {
@@ -280,6 +359,12 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
 
   return (
     <div className="glass fullscreen-game-container">
+      <InsuranceModal
+        isOpen={insuranceOpen}
+        betAmount={betAmount}
+        onPurchase={handleInsurancePurchase}
+        onSkip={handleInsuranceSkip}
+      />
       <style>{`
         @keyframes xj-card-in { 0%{transform:translateX(28px) rotate(4deg);opacity:0} 100%{transform:translateX(0) rotate(0deg);opacity:1} }
         @keyframes xj-bust-shake { 0%,100%{transform:translateX(0)} 15%{transform:translateX(-7px)} 30%{transform:translateX(7px)} 45%{transform:translateX(-6px)} 60%{transform:translateX(6px)} 75%{transform:translateX(-3px)} 90%{transform:translateX(3px)} }

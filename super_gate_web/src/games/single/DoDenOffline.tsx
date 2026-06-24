@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Play, RotateCcw, Trash2 } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
+import { InsuranceModal } from '../../components/InsuranceModal';
+import { BigWinFeed } from '../../components/BigWinFeed';
+import { AuthService } from '../../services/authService';
 import confetti from 'canvas-confetti';
 
 interface DoDenOfflineProps {
@@ -35,6 +38,10 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
   const [colorFlash, setColorFlash] = useState<'red' | 'black' | null>(null);
   const [message, setMessage] = useState<string>('🔴 Đặt cược vào Đỏ hoặc Đen ⚫');
   const [winDelta, setWinDelta] = useState<number | null>(null);
+
+  // Insurance state — only used when bet ≥ 100. Premium charged on purchase.
+  const [insuranceOpen, setInsuranceOpen] = useState<boolean>(false);
+  const [insurance, setInsurance] = useState<{ premium: number; refundPct: number } | null>(null);
 
   // Double-up state
   // phase: 'idle' = no modal; 'offer' = đang hỏi gấp đôi; 'choosing' = chờ chọn màu; 'lost' = vừa mất tất cả
@@ -102,6 +109,16 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
       return;
     }
 
+    // Pre-reveal insurance gate
+    if (betAmount >= 100 && insurance === null) {
+      setInsuranceOpen(true);
+      return;
+    }
+
+    proceedFlip();
+  };
+
+  const proceedFlip = () => {
     setIsFlipping(true);
     setFlipFast(false);
     setRevealedCard(null);
@@ -112,6 +129,30 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
     // Phase 1: slow spin (800ms) → Phase 2: fast spin → reveal
     setTimeout(() => setFlipFast(true), 800);
     setTimeout(() => resolveGame(), 1600);
+  };
+
+  const handleInsurancePurchase = async (premium: number, refundPct: number) => {
+    const balance = CoinService.getData().balance;
+    if (balance < premium) {
+      alert('❌ Không đủ xu mua bảo hiểm!');
+      setInsuranceOpen(false);
+      return;
+    }
+    const ok = await CoinService.spendCoins(premium);
+    if (!ok) {
+      alert('❌ Không thể trừ phí bảo hiểm.');
+      setInsuranceOpen(false);
+      return;
+    }
+    setInsurance({ premium, refundPct });
+    setInsuranceOpen(false);
+    proceedFlip();
+  };
+
+  const handleInsuranceSkip = () => {
+    setInsurance(null);
+    setInsuranceOpen(false);
+    proceedFlip();
   };
 
   const resolveGame = async () => {
@@ -139,12 +180,18 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
 
     const isWin = (capturedChoice === 'red' && isRed) || (capturedChoice === 'black' && !isRed);
 
+    const insSnapshot = insurance;
+
     if (isWin) {
       // KHÔNG cộng xu ngay — treo trong currentWin và mời double-up.
       const winPayout = capturedAmount * 2; // gốc + lời 1x
       const netWin = capturedAmount;
       setWinDelta(netWin);
-      setMessage(`🎉 Thắng cược! Đang treo ${winPayout} xu — gấp đôi hay nhận?`);
+      setMessage(
+        insSnapshot
+          ? `🎉 Thắng cược! Treo ${winPayout} xu (đã trừ phí BH ${insSnapshot.premium}) — gấp đôi hay nhận?`
+          : `🎉 Thắng cược! Đang treo ${winPayout} xu — gấp đôi hay nhận?`,
+      );
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
       // Mở modal double-up
@@ -152,10 +199,30 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
       setDoubleCount(0);
       setDoubleCard(null);
       setDoublePhase('offer');
+
+      if (netWin > 500) {
+        const name = AuthService.getPlayer()?.displayName || 'Khách';
+        BigWinFeed.report(name, netWin, 'Đỏ Đen');
+      }
     } else {
-      setWinDelta(-capturedAmount);
-      setMessage(`💸 Thua cược. Lá bài màu ${isRed ? 'Đỏ 🔴' : 'Đen ⚫'}!`);
+      // Loss path — apply insurance refund if purchased
+      if (insSnapshot) {
+        const refund = Math.round(capturedAmount * insSnapshot.refundPct);
+        if (refund > 0) {
+          await CoinService.earnCoins(refund);
+          setMessage(`🛡️ Thua nhưng bảo hiểm hoàn ${refund} xu. Bài ${isRed ? 'Đỏ 🔴' : 'Đen ⚫'}.`);
+        } else {
+          setWinDelta(-capturedAmount);
+          setMessage(`💸 Thua cược. Lá bài màu ${isRed ? 'Đỏ 🔴' : 'Đen ⚫'}!`);
+        }
+      } else {
+        setWinDelta(-capturedAmount);
+        setMessage(`💸 Thua cược. Lá bài màu ${isRed ? 'Đỏ 🔴' : 'Đen ⚫'}!`);
+      }
     }
+
+    // Clear insurance after the round resolves
+    setInsurance(null);
 
     setBetChoice(null);
     setBetAmount(0);
@@ -238,6 +305,12 @@ export const DoDenOffline: React.FC<DoDenOfflineProps> = ({ onClose }) => {
 
   return (
     <div className="glass fullscreen-game-container">
+      <InsuranceModal
+        isOpen={insuranceOpen}
+        betAmount={betAmount}
+        onPurchase={handleInsurancePurchase}
+        onSkip={handleInsuranceSkip}
+      />
       <style>{`
         @keyframes dd-spin-slow { 0%{transform:rotateY(0deg)} 100%{transform:rotateY(360deg)} }
         @keyframes dd-spin-fast { 0%{transform:rotateY(0deg)} 100%{transform:rotateY(360deg)} }

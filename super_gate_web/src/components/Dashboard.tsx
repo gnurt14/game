@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Search, Play, CheckCircle, Circle } from 'lucide-react';
 import { CoinService, MissionStatus, CoinData } from '../services/coinService';
 import { GameCategory } from '../services/weeklyMissionService';
+import { BigWinFeed } from './BigWinFeed';
+import { NotificationToastStack, NotificationService } from './NotificationCenter';
+import { MysteryCrate } from './MysteryCrate';
 
 export interface GameMetadata {
   id: string;
@@ -44,6 +47,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPlayGame }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [missionStatus, setMissionStatus] = useState<MissionStatus>(CoinService.getMissionStatus());
   const [coinData, setCoinData] = useState<CoinData>(CoinService.getData());
+  const [isCrateOpen, setIsCrateOpen] = useState<boolean>(false);
 
   useEffect(() => {
     const unsub = CoinService.subscribe((data) => {
@@ -51,6 +55,54 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPlayGame }) => {
       setCoinData(data);
     });
     return unsub;
+  }, []);
+
+  // ── Notification timers ────────────────────────────────────────────────────
+  // Rotate through small set of canned messages to drive engagement.
+  useEffect(() => {
+    const idleMessages: Array<() => void> = [
+      () => {
+        const bal = CoinService.getData().balance;
+        if (bal > 1000) {
+          NotificationService.notify({
+            title: 'Bạn đang giàu! 💰',
+            body: `Bạn còn ${bal.toLocaleString('vi-VN')} xu chưa cược — Bầu Cua đang Hot! 🎲`,
+            type: 'info',
+          });
+        }
+      },
+      () => {
+        NotificationService.notify({
+          title: 'Jackpot vừa nổ! 🎰',
+          body: 'Slot Machine vừa có jackpot 50.000 xu — thử ngay!',
+          type: 'jackpot',
+        });
+      },
+      () => {
+        NotificationService.notify({
+          title: 'Phòng VIP đang sôi động 🌐',
+          body: 'Phòng Xì Jack VIP đang có 5 người, vào ngay!',
+          type: 'promo',
+        });
+      },
+    ];
+
+    let tick = 0;
+    // First nudge after 60s, then every 90s rotate through the list.
+    const initial = window.setTimeout(() => {
+      idleMessages[tick % idleMessages.length]();
+      tick++;
+    }, 60_000);
+
+    const interval = window.setInterval(() => {
+      idleMessages[tick % idleMessages.length]();
+      tick++;
+    }, 90_000);
+
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
   }, []);
 
   const categories = [
@@ -71,7 +123,67 @@ export const Dashboard: React.FC<DashboardProps> = ({ onPlayGame }) => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-      
+
+      {/* Mystery Crate floating fixed widgets */}
+      <MysteryCrate isOpen={isCrateOpen} onClose={() => setIsCrateOpen(false)} />
+      <BigWinFeed />
+      <NotificationToastStack />
+
+      {/* Mystery Crate entry card */}
+      <div
+        className="glass glass-interactive"
+        onClick={() => setIsCrateOpen(true)}
+        style={{
+          padding: '18px 22px',
+          border: '1px solid rgba(241, 196, 15, 0.3)',
+          background: 'linear-gradient(135deg, rgba(241,196,15,0.08) 0%, rgba(231,76,60,0.06) 100%)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          flexWrap: 'wrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <div style={{ fontSize: '2.4rem' }}>📦</div>
+          <div>
+            <h3
+              style={{
+                fontSize: '1.05rem',
+                fontWeight: 900,
+                color: '#f1c40f',
+                margin: 0,
+                letterSpacing: 0.5,
+              }}
+            >
+              MỞ RƯƠNG BÍ ẨN
+            </h3>
+            <p style={{ fontSize: '0.78rem', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+              3 cấp rương — Đồng, Bạc, Vàng. Jackpot lên tới 25.000 xu! 👑
+            </p>
+          </div>
+        </div>
+        <button
+          className="btn btn-primary"
+          onClick={(e) => {
+            e.stopPropagation();
+            setIsCrateOpen(true);
+          }}
+          style={{
+            background: 'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)',
+            color: '#1a1138',
+            fontWeight: 900,
+            padding: '10px 18px',
+            border: 'none',
+            borderRadius: '12px',
+            cursor: 'pointer',
+          }}
+        >
+          🎁 Mở Ngay
+        </button>
+      </div>
+
       {/* Daily Missions Progress Panel */}
       <div className="glass" style={{ padding: '20px 24px', border: '1px solid rgba(124, 111, 255, 0.15)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
         <div>
