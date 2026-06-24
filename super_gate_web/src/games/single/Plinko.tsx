@@ -8,7 +8,11 @@ interface PlinkoProps {
 
 const ROWS = 8;
 // 9 buckets at the bottom = ROWS + 1
-const BUCKET_MULTIPLIERS = [10, 4, 2, 1, 0.5, 1, 2, 4, 10];
+// Đã nerf để có house edge ~11% (EV ≈ 0.89 cost):
+//   bucket prob = C(8,k)/256: [0.39%, 3.13%, 10.94%, 21.88%, 27.34%, ...]
+//   Ô giữa thường xuyên nhất → multiplier thấp (player thường thua nhẹ)
+//   Ô biên hiếm → jackpot 10x giữ nguyên cho cảm giác kích thích
+const BUCKET_MULTIPLIERS = [10, 3, 1.5, 0.5, 0.3, 0.5, 1.5, 3, 10];
 
 // Layout config
 const WIDTH = 440;
