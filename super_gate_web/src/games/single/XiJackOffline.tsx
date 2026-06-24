@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Plus, Square } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
+import { StreakService } from '../../services/streakService';
+import { DoubleUpUniversalModal } from '../../components/DoubleUpUniversalModal';
+import { ComebackModal } from '../../components/ComebackModal';
 import { buildXjDeck, xjHandValue } from '../../services/roomService';
 import confetti from 'canvas-confetti';
 
@@ -20,6 +23,16 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
   const [winDelta, setWinDelta] = useState<number | null>(null);
   const [bustShake, setBustShake] = useState<boolean>(false);
   const [thinkingText, setThinkingText] = useState<string>('.');
+
+  // Double-up + streak state
+  const [doubleUpOpen, setDoubleUpOpen] = useState<boolean>(false);
+  const [doubleUpBase, setDoubleUpBase] = useState<number>(0);
+  const [winStreak, setWinStreak] = useState<number>(
+    StreakService.getWinStreak('xi_jack'),
+  );
+  const [comebackOpen, setComebackOpen] = useState<boolean>(false);
+  const [comebackShownThisLoss, setComebackShownThisLoss] =
+    useState<boolean>(false);
 
   useEffect(() => {
     setBalance(CoinService.getData().balance);
@@ -50,11 +63,61 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       alert('❌ Bạn không đủ xu cược!');
       return;
     }
+
+    // Trigger comeback popup TRƯỚC khi đặt cược ván mới (1 lần / chuỗi thua).
+    if (
+      betAmount === 0 &&
+      !comebackShownThisLoss &&
+      StreakService.shouldShowComeback('xi_jack')
+    ) {
+      setComebackOpen(true);
+      setComebackShownThisLoss(true);
+      return;
+    }
+
     const success = await CoinService.spendCoins(amount);
     if (success) {
       setBetAmount(prev => prev + amount);
       setMessage(`Đã cược tổng cộng: 🪙 ${betAmount + amount} xu`);
     }
+  };
+
+  const handleComebackContinue = () => {
+    setComebackOpen(false);
+  };
+
+  const handleDoubleUpClaim = async (finalAmount: number) => {
+    setDoubleUpOpen(false);
+    if (finalAmount > 0) {
+      await CoinService.earnCoins(finalAmount);
+      setMessage(`💰 Đã nhận ${finalAmount} xu vào ví!`);
+    } else {
+      setMessage('💸 Đã mất thưởng do gấp đôi.');
+    }
+    setDoubleUpBase(0);
+  };
+
+  /**
+   * Helper: handle thắng thường (không phải Ngũ Linh/Blackjack) — apply streak +
+   * comeback multiplier, mở DoubleUp modal cho phần lời. Stake gốc đã trả lại
+   * không qua DoubleUp.
+   */
+  const _routeProfitToDoubleUp = (profitBase: number, stakeReturn: number) => {
+    const mult = StreakService.getMultiplier('xi_jack');
+    const comebackBonus = StreakService.consumeComebackBonus('xi_jack') ? 2 : 1;
+    const boostedProfit = Math.round(profitBase * mult * comebackBonus);
+
+    // Refund stake gốc về ví NGAY (không treo trong DoubleUp).
+    if (stakeReturn > 0) {
+      CoinService.earnCoins(stakeReturn);
+    }
+
+    StreakService.recordWin('xi_jack');
+    setWinStreak(StreakService.getWinStreak('xi_jack'));
+    setComebackShownThisLoss(false);
+
+    setDoubleUpBase(boostedProfit);
+    setDoubleUpOpen(true);
   };
 
   const handleClearBets = async () => {
@@ -104,6 +167,7 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       setWinDelta(0);
       setMessage('🤝 Hòa! Cả bạn và nhà cái đều đạt Blackjack (Xì Jack).');
     } else if (isPlayerBJ) {
+      // BLACKJACK — không offer double-up, payout trực tiếp. Track win.
       const winPayout = Math.round(capturedBet * 2.5);
       await CoinService.earnCoins(winPayout);
       setWinDelta(winPayout - capturedBet);
@@ -111,9 +175,14 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       confetti({ particleCount: 100, spread: 90, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 80, spread: 70, origin: { x: 0.7, y: 0.6 } }), 200);
       setTimeout(() => confetti({ particleCount: 60, spread: 110, origin: { x: 0.5, y: 0.3 } }), 400);
+      StreakService.recordWin('xi_jack');
+      setWinStreak(StreakService.getWinStreak('xi_jack'));
+      setComebackShownThisLoss(false);
     } else {
       setWinDelta(-capturedBet);
       setMessage('💸 Nhà cái đạt Blackjack (Xì Jack). Bạn thua ván này.');
+      StreakService.recordLoss('xi_jack');
+      setWinStreak(0);
     }
     await CoinService.recordGamePlayed('Xì Jack Offline');
   };
@@ -137,6 +206,8 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       setBustShake(true);
       setTimeout(() => setBustShake(false), 600);
       setMessage(`💥 Quá 21 điểm (${nextVal}đ)! Bạn bị BUST và thua cược.`);
+      StreakService.recordLoss('xi_jack');
+      setWinStreak(0);
       CoinService.recordGamePlayed('Xì Jack Offline');
     } else if (nextHand.length === 5) {
       // 5 lá ≤21 = Ngũ Linh → ép stand, qua dealer turn để hoàn tất ván.
@@ -178,7 +249,7 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
     const pVal = xjHandValue(playerHand);
     const capturedBet = betAmount;
 
-    // Ưu tiên Ngũ Linh: thắng tuyệt đối x2 cược (lời = 2x bet)
+    // Ưu tiên Ngũ Linh: thắng tuyệt đối x2 cược — KHÔNG offer double-up, payout trực tiếp.
     if (forceNguLinh) {
       const profit = capturedBet * 2;
       const winPayout = capturedBet + profit; // gốc + lời 2x
@@ -188,31 +259,36 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
       confetti({ particleCount: 120, spread: 100, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 100, spread: 80, origin: { x: 0.7, y: 0.6 } }), 200);
       setTimeout(() => confetti({ particleCount: 80, spread: 120, origin: { x: 0.5, y: 0.3 } }), 400);
+      StreakService.recordWin('xi_jack');
+      setWinStreak(StreakService.getWinStreak('xi_jack'));
+      setComebackShownThisLoss(false);
       await CoinService.recordGamePlayed('Xì Jack Offline');
       return;
     }
 
     if (dVal > 21) {
-      const winPayout = capturedBet * 2;
-      await CoinService.earnCoins(winPayout);
+      // Dealer bust — apply multiplier vào lời, offer double-up.
       setWinDelta(capturedBet);
-      setMessage(`🎉 Nhà cái BUST (${dVal}đ)! Bạn thắng +${capturedBet} xu!`);
+      setMessage(`🎉 Nhà cái BUST (${dVal}đ)! Treo lời gấp đôi hoặc nhận?`);
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
+      _routeProfitToDoubleUp(capturedBet, capturedBet);
     } else if (pVal > dVal) {
-      const winPayout = capturedBet * 2;
-      await CoinService.earnCoins(winPayout);
       setWinDelta(capturedBet);
-      setMessage(`🏆 Bạn thắng! Hand đạt ${pVal}đ so với Nhà cái ${dVal}đ (+${capturedBet} xu).`);
+      setMessage(`🏆 Bạn thắng ${pVal}đ vs ${dVal}đ! Treo lời gấp đôi hoặc nhận?`);
       confetti({ particleCount: 70, spread: 70, origin: { x: 0.3, y: 0.6 } });
       setTimeout(() => confetti({ particleCount: 50, spread: 60, origin: { x: 0.7, y: 0.6 } }), 250);
+      _routeProfitToDoubleUp(capturedBet, capturedBet);
     } else if (pVal < dVal) {
       setWinDelta(-capturedBet);
       setMessage(`💸 Bạn thua. Nhà cái đạt ${dVal}đ so với Hand ${pVal}đ.`);
+      StreakService.recordLoss('xi_jack');
+      setWinStreak(0);
     } else {
       await CoinService.earnCoins(capturedBet);
       setWinDelta(0);
       setMessage(`🤝 Hòa (Push)! Cả hai cùng đạt ${pVal} điểm.`);
+      // Hòa không tính win/loss.
     }
 
     await CoinService.recordGamePlayed('Xì Jack Offline');
@@ -294,9 +370,28 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
             Số dư của bạn: <strong style={{ color: '#f1c40f', fontSize: '1rem' }}>🪙 {balance} xu</strong>
           </span>
         </div>
-        <button onClick={onClose} className="btn btn-danger" style={{ fontSize: '0.85rem' }}>
-          Thoát
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {winStreak > 0 && (
+            <span
+              style={{
+                padding: '4px 10px',
+                borderRadius: '12px',
+                background:
+                  'linear-gradient(135deg, #f1c40f 0%, #e67e22 100%)',
+                color: '#1a1138',
+                fontSize: '0.78rem',
+                fontWeight: 900,
+                boxShadow: '0 4px 12px rgba(241,196,15,0.35)',
+              }}
+            >
+              🔥 Chuỗi {winStreak} (x
+              {StreakService.getMultiplier('xi_jack')})
+            </span>
+          )}
+          <button onClick={onClose} className="btn btn-danger" style={{ fontSize: '0.85rem' }}>
+            Thoát
+          </button>
+        </div>
       </div>
 
       {/* Main Table area */}
@@ -516,9 +611,21 @@ export const XiJackOffline: React.FC<XiJackOfflineProps> = ({ onClose }) => {
         )}
 
         <div style={{ fontSize: '0.7rem', color: 'var(--color-text-muted)', textAlign: 'center' }}>
-          💡 Luật chơi: Rút bài đạt điểm gần 21 nhất nhưng không vượt quá 21. Nhà cái bắt buộc rút nếu dưới 17 điểm. Xì Jack (Blackjack) ăn 1.5x cược gốc. 🌟 Ngũ Linh (5 lá ≤21) thắng tuyệt đối, ăn x2 cược.
+          💡 Luật chơi: Rút bài đạt điểm gần 21 nhất nhưng không vượt quá 21. Nhà cái bắt buộc rút nếu dưới 17 điểm. Xì Jack (Blackjack) ăn 1.5x cược gốc. 🌟 Ngũ Linh (5 lá ≤21) thắng tuyệt đối, ăn x2 cược. Thắng thường có thể 🎰 Gấp Đôi!
         </div>
       </div>
+
+      <DoubleUpUniversalModal
+        isOpen={doubleUpOpen}
+        baseAmount={doubleUpBase}
+        onClaim={handleDoubleUpClaim}
+      />
+
+      <ComebackModal
+        isOpen={comebackOpen}
+        lossStreak={StreakService.getLossStreak('xi_jack')}
+        onContinue={handleComebackContinue}
+      />
     </div>
   );
 };
