@@ -35,6 +35,11 @@ import { BrickBreaker } from './games/single/BrickBreaker';
 import { BauCuaOffline } from './games/single/BauCuaOffline';
 import { DoDenOffline } from './games/single/DoDenOffline';
 import { XiJackOffline } from './games/single/XiJackOffline';
+import { SlotMachine } from './games/single/SlotMachine';
+import { CrashGame } from './games/single/CrashGame';
+import { TaiXiu } from './games/single/TaiXiu';
+import { Plinko } from './games/single/Plinko';
+import { CoinFlip } from './games/single/CoinFlip';
 
 // Multiplayer Game Room View
 import { GameRoomView } from './components/GameRoomView';
@@ -165,6 +170,16 @@ export const App: React.FC = () => {
         return <DoDenOffline onClose={handleClose} />;
       case 'xi_jack_offline':
         return <XiJackOffline onClose={handleClose} />;
+      case 'slot_machine':
+        return <SlotMachine onClose={handleClose} />;
+      case 'crash_game':
+        return <CrashGame onClose={handleClose} />;
+      case 'tai_xiu':
+        return <TaiXiu onClose={handleClose} />;
+      case 'plinko':
+        return <Plinko onClose={handleClose} />;
+      case 'coin_flip':
+        return <CoinFlip onClose={handleClose} />;
       default:
         return (
           <div className="glass" style={{ width: '100%', height: 'calc(100vh - 120px)', display: 'flex', flexDirection: 'column', padding: '24px' }}>

@@ -17,6 +17,11 @@ export const GAMES_LIST: GameMetadata[] = [
   { id: 'bau_cua', name: 'Bầu Cua', description: 'Cược xu lắc xúc xắc may mắn', emoji: '🎲', category: 'lucky', gradient: ['#e53935', '#ff6f00'] },
   { id: 'do_den', name: 'Đỏ Đen', description: 'Đặt cược màu lá bài đỏ đen', emoji: '🃏', category: 'lucky', gradient: ['#7b0000', '#1a237e'] },
   { id: 'xi_jack', name: 'Xì Jack', description: 'Đấu trí với bài blackjack nhà cái', emoji: '💳', category: 'lucky', gradient: ['#1b5e20', '#004d40'] },
+  { id: 'slot_machine', name: 'Slot Machine', description: 'Quay 3 cuộn săn jackpot khổng lồ', emoji: '🎰', category: 'lucky', gradient: ['#c0392b', '#f1c40f'] },
+  { id: 'crash_game', name: 'Crash Game', description: 'Rút lời trước khi đồ thị nổ tung', emoji: '💥', category: 'lucky', gradient: ['#16a085', '#e74c3c'] },
+  { id: 'tai_xiu', name: 'Tài Xỉu', description: 'Cược tổng 3 xúc xắc Tài-Xỉu', emoji: '🎲', category: 'lucky', gradient: ['#8B4513', '#d4a574'] },
+  { id: 'plinko', name: 'Plinko', description: 'Thả bóng rơi qua peg ăn multiplier', emoji: '🎯', category: 'lucky', gradient: ['#8e44ad', '#3498db'] },
+  { id: 'coin_flip', name: 'Coin Flip', description: 'Lật đồng xu Mặt-Sấp x2 ăn liền', emoji: '🪙', category: 'lucky', gradient: ['#f39c12', '#d4a017'] },
   // 🎮 Phản Xạ
   { id: 'snake', name: 'Snake', description: 'Rắn ăn mồi truyền thống tốc độ', emoji: '🐍', category: 'action', gradient: ['#2ecc71', '#27ae60'] },
   { id: 'flappy', name: 'Flappy Bird', description: 'Bay qua chướng ngại vật liên tục', emoji: '🐦', category: 'action', gradient: ['#03a9f4', '#4fc3f7'] },
