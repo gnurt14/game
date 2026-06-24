@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Play, Shield as ShieldIcon, Zap } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
+import { ContinueModal } from '../../components/ContinueModal';
 import confetti from 'canvas-confetti';
+
+const CONTINUE_COST = 50;
+const TUTORIAL_SEEN_KEY = 'brickbreaker_seen_tutorial';
 
 interface BrickBreakerProps {
   onClose: () => void;
@@ -58,6 +62,15 @@ export const BrickBreaker: React.FC<BrickBreakerProps> = ({ onClose }) => {
   const [showLaserHint, setShowLaserHint] = useState<boolean>(false);
   const [earnedCoins, setEarnedCoins] = useState<number | null>(null);
 
+  // Continue modal state
+  const [showContinueModal, setShowContinueModal] = useState<boolean>(false);
+  const [hasContinued, setHasContinued] = useState<boolean>(false);
+
+  // Tutorial skip (read once on mount)
+  const tutorialSeenRef = useRef<boolean>(
+    typeof window !== 'undefined' && window.localStorage?.getItem(TUTORIAL_SEEN_KEY) === '1'
+  );
+
   // Mutable loop states
   const scoreRef = useRef<number>(0);
   const livesRef = useRef<number>(3);
@@ -110,6 +123,8 @@ export const BrickBreaker: React.FC<BrickBreakerProps> = ({ onClose }) => {
     setIsStarted(false);
     setEarnedCoins(null);
     setLevelBanner(null);
+    setShowContinueModal(false);
+    setHasContinued(false);
 
     isStartedRef.current = false;
     gameOverRef.current = false;
@@ -165,11 +180,27 @@ export const BrickBreaker: React.FC<BrickBreakerProps> = ({ onClose }) => {
     }
     bricksRef.current = newBricks;
 
-    // Trigger visual banner
-    setLevelBanner(`CẤP ĐỘ ${lvlNum}`);
-    setTimeout(() => {
+    // Trigger visual banner — skip for level 1 if the user has already seen the tutorial.
+    // Levels 2 & 3 always show banner because they contain gameplay warnings (steel / bumper).
+    const shouldShowBanner = lvlNum !== 1 || !tutorialSeenRef.current;
+    if (shouldShowBanner) {
+      setLevelBanner(`CẤP ĐỘ ${lvlNum}`);
+      setTimeout(() => {
+        setLevelBanner(null);
+      }, 1800);
+    } else {
       setLevelBanner(null);
-    }, 1800);
+    }
+
+    // Persist that user has seen level 1 at least once
+    if (lvlNum === 1 && !tutorialSeenRef.current) {
+      try {
+        window.localStorage?.setItem(TUTORIAL_SEEN_KEY, '1');
+        tutorialSeenRef.current = true;
+      } catch {
+        // ignore storage errors
+      }
+    }
 
     setTimeout(draw, 50);
   };
@@ -452,14 +483,58 @@ export const BrickBreaker: React.FC<BrickBreakerProps> = ({ onClose }) => {
   };
 
   const handleGameOver = async () => {
+    // Stop the loop
+    if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
+
+    // Offer continue once per run
+    if (!hasContinued) {
+      isStartedRef.current = false;
+      setShowContinueModal(true);
+      return;
+    }
+
+    finalizeGameOver();
+  };
+
+  const finalizeGameOver = async () => {
     gameOverRef.current = true;
     setGameOver(true);
     setIsStarted(false);
+    setShowContinueModal(false);
     if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
 
     const coins = await CoinService.reportGameScore('brick_breaker', { won: false, score: scoreRef.current, lives: 0 });
     setEarnedCoins(coins);
     await CoinService.recordGamePlayed('Brick Breaker');
+  };
+
+  const handleContinueAccepted = () => {
+    // Modal already deducted the coins; give 1 life, keep score, reset paddle/ball.
+    setHasContinued(true);
+    setShowContinueModal(false);
+    livesRef.current = 1;
+    setLives(1);
+    paddleWidthRef.current = 80;
+    paddleXRef.current = (canvasWidth - paddleWidthRef.current) / 2;
+    ballsRef.current = [{
+      x: canvasWidth / 2,
+      y: canvasHeight - 30,
+      dx: 2.2 * (Math.random() > 0.5 ? 1 : -1),
+      dy: -3.5,
+      radius: 6,
+    }];
+    bulletsRef.current = [];
+    powerupsRef.current = [];
+    gameOverRef.current = false;
+    isStartedRef.current = true;
+    setIsStarted(true);
+    if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
+    frameIdRef.current = requestAnimationFrame(gameLoop);
+  };
+
+  const handleContinueDeclined = () => {
+    setShowContinueModal(false);
+    finalizeGameOver();
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -695,6 +770,16 @@ export const BrickBreaker: React.FC<BrickBreakerProps> = ({ onClose }) => {
             </button>
           </div>
         )}
+
+        {/* Continue Modal */}
+        <ContinueModal
+          isOpen={showContinueModal}
+          cost={CONTINUE_COST}
+          title="HẾT BÓNG"
+          subtitle="Hồi 1 mạng bóng, giữ nguyên điểm?"
+          onContinue={handleContinueAccepted}
+          onSkip={handleContinueDeclined}
+        />
 
         {/* Game Over Screen Overlay */}
         {gameOver && (

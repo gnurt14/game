@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Flag, Eye } from 'lucide-react';
+import { RefreshCw, Flag, Eye, Lightbulb } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
 import confetti from 'canvas-confetti';
+
+const HINT_COST = 10;
 
 interface MinesweeperProps {
   onClose: () => void;
@@ -32,6 +34,12 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
   const [flagsCount, setFlagsCount] = useState(0);
   const [seconds, setSeconds] = useState(0);
   const [earnedCoins, setEarnedCoins] = useState<number | null>(null);
+  const [coinBalance, setCoinBalance] = useState<number>(CoinService.getData().balance);
+
+  useEffect(() => {
+    const unsub = CoinService.subscribe((d) => setCoinBalance(d.balance));
+    return () => { unsub(); };
+  }, []);
 
   // Difficulty configs
   const configs = {
@@ -192,6 +200,38 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
     setGrid(gridState);
   };
 
+  const useHint = async () => {
+    if (gameOver || won) return;
+    if (firstTap) return; // need to tap a first cell to generate mines
+    if (coinBalance < HINT_COST) return;
+
+    // Collect all safe (not mine), not revealed cells
+    const safeCells: { r: number; c: number }[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cell = grid[r][c];
+        if (!cell.isMine && !cell.isRevealed) {
+          safeCells.push({ r, c });
+        }
+      }
+    }
+    if (safeCells.length === 0) return;
+
+    const ok = await CoinService.spendCoins(HINT_COST);
+    if (!ok) return;
+
+    const pick = safeCells[Math.floor(Math.random() * safeCells.length)];
+    const nextGrid = grid.map((row) => row.map((cell) => ({ ...cell })));
+    // Clear flag if any to avoid stale flag count
+    if (nextGrid[pick.r][pick.c].isFlagged) {
+      nextGrid[pick.r][pick.c].isFlagged = false;
+      setFlagsCount((prev) => Math.max(0, prev - 1));
+    }
+    revealCell(nextGrid, pick.r, pick.c);
+    setGrid(nextGrid);
+    checkWinCondition(nextGrid);
+  };
+
   const checkWinCondition = async (gridState: Cell[][]) => {
     let unrevealedSafeCells = 0;
     for (let r = 0; r < rows; r++) {
@@ -266,14 +306,43 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
           ))}
 
           {/* Mode Switch for Mobile */}
-          <button 
-            onClick={() => setFlagMode(!flagMode)} 
+          <button
+            onClick={() => setFlagMode(!flagMode)}
             className="btn btn-secondary"
             style={{ padding: '8px', background: flagMode ? 'rgba(241, 196, 15, 0.15)' : 'rgba(255,255,255,0.03)', border: flagMode ? '1px solid #f1c40f' : 'var(--border-glass)' }}
             title={flagMode ? "Bấm vào ô để cắm cờ" : "Bấm vào ô để mở"}
           >
             {flagMode ? <Flag size={16} color="#f1c40f" /> : <Eye size={16} />}
           </button>
+
+          {/* Hint Button — 10 xu */}
+          {(() => {
+            const hintDisabled = gameOver || won || firstTap || coinBalance < HINT_COST;
+            return (
+              <button
+                onClick={useHint}
+                disabled={hintDisabled}
+                className="btn btn-secondary"
+                title={firstTap ? 'Hãy mở 1 ô trước khi dùng gợi ý' : coinBalance < HINT_COST ? 'Không đủ xu' : 'Gợi ý 1 ô an toàn'}
+                style={{
+                  padding: '6px 10px',
+                  fontSize: '0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  background: hintDisabled ? 'rgba(255,255,255,0.03)' : 'rgba(241, 196, 15, 0.15)',
+                  border: hintDisabled ? 'var(--border-glass)' : '1px solid #f1c40f',
+                  color: hintDisabled ? 'rgba(255,255,255,0.4)' : '#f1c40f',
+                  cursor: hintDisabled ? 'not-allowed' : 'pointer',
+                  opacity: hintDisabled ? 0.6 : 1,
+                  fontWeight: 700,
+                }}
+              >
+                <Lightbulb size={14} />
+                Gợi ý ({HINT_COST} xu)
+              </button>
+            );
+          })()}
           
           <button onClick={() => initGame(difficulty)} className="btn btn-secondary" style={{ padding: '8px' }}>
             <RefreshCw size={16} />
@@ -289,7 +358,8 @@ export const Minesweeper: React.FC<MinesweeperProps> = ({ onClose }) => {
       <div style={{ flexGrow: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'auto', position: 'relative' }}>
         
         {/* Visual Matrix grid */}
-        <div 
+        <div
+          onContextMenu={(e) => e.preventDefault()}
           style={{
             display: 'grid',
             gridTemplateRows: `repeat(${rows}, 1fr)`,

@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { CoinService } from '../../services/coinService';
+import { ContinueModal } from '../../components/ContinueModal';
 import confetti from 'canvas-confetti';
+
+const CONTINUE_COST = 50;
+const FREEZE_BUY_COST = 30;
+const FRENZY_BUY_COST = 50;
 
 interface NinjaFruitProps {
   onClose: () => void;
@@ -49,24 +54,41 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
   const [gameOver, setGameOver] = useState<boolean>(false);
   const [earnedCoins, setEarnedCoins] = useState<number | null>(null);
 
+  // Continue modal state
+  const [showContinueModal, setShowContinueModal] = useState<boolean>(false);
+  const [hasContinued, setHasContinued] = useState<boolean>(false);
+
+  // Pre-game shop (powerup pre-purchase)
+  const [coinBalance, setCoinBalance] = useState<number>(CoinService.getData().balance);
+  const [shopFreezeBought, setShopFreezeBought] = useState<boolean>(false);
+  const [shopFrenzyBought, setShopFrenzyBought] = useState<boolean>(false);
+
   // Refs for loop
   const scoreRef = useRef<number>(0);
   const livesRef = useRef<number>(3);
   const timeLeftRef = useRef<number>(30);
-  
+
   const fruitsRef = useRef<Fruit[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   const swipePointsRef = useRef<SlicePoint[]>([]);
-  
+
   const isMouseDownRef = useRef<boolean>(false);
   const frameIdRef = useRef<number | null>(null);
   const isStartedRef = useRef<boolean>(false);
   const gameOverRef = useRef<boolean>(false);
   const timerIntervalRef = useRef<any>(null);
+  // gameMode mirror for stable read inside RAF loop closure
+  const gameModeRef = useRef<'classic' | 'zen' | null>(null);
 
   // Special powerup timers in frames (60fps)
   const frenzyTimerRef = useRef<number>(0);
   const freezeTimerRef = useRef<number>(0);
+
+  // Forced powerup spawns (purchased pre-game)
+  const forcedFreezeAvailableRef = useRef<boolean>(false);
+  const forcedFrenzyAvailableRef = useRef<boolean>(false);
+  // Frame count in which game started (used to enforce 5s window)
+  const gameStartFrameRef = useRef<number>(0);
 
   const canvasWidth = 440;
   const canvasHeight = 360;
@@ -84,14 +106,21 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
     swipePointsRef.current = [];
     frenzyTimerRef.current = 0;
     freezeTimerRef.current = 0;
+    forcedFreezeAvailableRef.current = false;
+    forcedFrenzyAvailableRef.current = false;
 
     setScore(0);
     setLives(3);
     setTimeLeft(30);
     setGameMode(null);
+    gameModeRef.current = null;
     setGameOver(false);
     setIsStarted(false);
     setEarnedCoins(null);
+    setShowContinueModal(false);
+    setHasContinued(false);
+    setShopFreezeBought(false);
+    setShopFrenzyBought(false);
 
     isStartedRef.current = false;
     gameOverRef.current = false;
@@ -106,8 +135,14 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
 
   const chooseModeAndStart = (mode: 'classic' | 'zen') => {
     setGameMode(mode);
+    gameModeRef.current = mode;
     isStartedRef.current = true;
     setIsStarted(true);
+
+    // Transfer pre-game purchases into forced spawn flags
+    forcedFreezeAvailableRef.current = shopFreezeBought;
+    forcedFrenzyAvailableRef.current = shopFrenzyBought;
+    gameStartFrameRef.current = frameCountRef.current;
 
     if (mode === 'zen') {
       timeLeftRef.current = 30;
@@ -126,12 +161,13 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
     frameIdRef.current = requestAnimationFrame(gameLoop);
   };
 
-  let frameCount = 0;
+  // Frame counter held in ref so it survives React re-renders
+  const frameCountRef = useRef<number>(0);
 
   const gameLoop = () => {
     if (!isStartedRef.current || gameOverRef.current) return;
 
-    frameCount++;
+    frameCountRef.current++;
     updatePhysics();
     draw();
 
@@ -143,18 +179,21 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
     if (frenzyTimerRef.current > 0) frenzyTimerRef.current--;
     if (freezeTimerRef.current > 0) freezeTimerRef.current--;
 
+    const mode = gameModeRef.current;
+
     // 1. Spawn fruits/bombs at random interval
     const isFrenzy = frenzyTimerRef.current > 0;
     const isFrozen = freezeTimerRef.current > 0;
-    
-    const spawnRate = isFrenzy ? 8 : 60;
-    const currentGravity = isFrozen ? gravity * 0.3 : gravity;
 
-    if (frameCount % spawnRate === 0) {
-      const spawnCount = isFrenzy 
-        ? 2 
-        : gameMode === 'zen' 
-          ? Math.floor(Math.random() * 3) + 1 
+    const spawnRate = isFrenzy ? 8 : 60;
+    // Freeze nerf: gravity now reduced to 0.7x (was 0.3x)
+    const currentGravity = isFrozen ? gravity * 0.7 : gravity;
+
+    if (frameCountRef.current % spawnRate === 0) {
+      const spawnCount = isFrenzy
+        ? 2
+        : mode === 'zen'
+          ? Math.floor(Math.random() * 3) + 1
           : Math.floor(Math.random() * 2) + 1;
 
       for (let i = 0; i < spawnCount; i++) {
@@ -165,8 +204,9 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
     // 2. Move Fruits
     const activeFruits: Fruit[] = [];
     fruitsRef.current.forEach((f) => {
-      const speedMult = isFrozen ? 0.35 : 1.0;
-      
+      // Freeze nerf: movement now reduced to 0.7x (was 0.35x)
+      const speedMult = isFrozen ? 0.7 : 1.0;
+
       f.vy += currentGravity; // Gravity pull down
       f.x += f.vx * speedMult;
       f.y += f.vy * speedMult;
@@ -178,8 +218,8 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
       // Check if dropped uncut below screen
       const offScreenBottom = f.y - f.radius > canvasHeight;
       if (offScreenBottom) {
-        // Drop penalty ONLY in classic mode, and NOT for bombs
-        if (gameMode === 'classic' && !f.isSliced && f.type === 'fruit') {
+        // Drop penalty ONLY in classic mode, and NOT for bombs, and NOT already sliced
+        if (mode === 'classic' && !f.isSliced && f.type === 'fruit') {
           livesRef.current -= 1;
           setLives(livesRef.current);
           if (livesRef.current <= 0) {
@@ -196,7 +236,8 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
     // 3. Move Particles
     const activeParticles: Particle[] = [];
     particlesRef.current.forEach((p) => {
-      const speedMult = isFrozen ? 0.35 : 1.0;
+      // Freeze nerf parity with movement
+      const speedMult = isFrozen ? 0.7 : 1.0;
       p.x += p.vx * speedMult;
       p.y += p.vy * speedMult;
       p.alpha -= 0.02; // Fade out
@@ -214,9 +255,28 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
 
   const spawnFruit = () => {
     const isFrenzy = frenzyTimerRef.current > 0;
+    const mode = gameModeRef.current;
     // Bombs spawn only in Classic Mode and when Frenzy is not active
-    const isBomb = gameMode === 'classic' && !isFrenzy && Math.random() < 0.16;
-    
+    const isBomb = mode === 'classic' && !isFrenzy && Math.random() < 0.16;
+
+    // Forced powerup spawn check — only within first 5 seconds (~300 frames)
+    const sinceStart = frameCountRef.current - gameStartFrameRef.current;
+    const withinForcedWindow = sinceStart <= 300;
+    let forcedSpecial: 'frenzy' | 'freeze' | null = null;
+    if (!isBomb && withinForcedWindow) {
+      if (forcedFrenzyAvailableRef.current) {
+        forcedSpecial = 'frenzy';
+        forcedFrenzyAvailableRef.current = false;
+      } else if (forcedFreezeAvailableRef.current) {
+        forcedSpecial = 'freeze';
+        forcedFreezeAvailableRef.current = false;
+      }
+    } else if (!withinForcedWindow) {
+      // Expire window without consuming visually — but disable to prevent later forced spawns
+      forcedFrenzyAvailableRef.current = false;
+      forcedFreezeAvailableRef.current = false;
+    }
+
     let x = 0;
     let y = 0;
     let vx = 0;
@@ -244,13 +304,22 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
     if (isBomb) {
       emoji = '💣';
       color = '#e74c3c';
+    } else if (forcedSpecial === 'frenzy') {
+      emoji = '🍌⭐';
+      color = '#ffea00';
+      special = 'frenzy';
+    } else if (forcedSpecial === 'freeze') {
+      emoji = '🥥❄️';
+      color = '#00d2ff';
+      special = 'freeze';
     } else {
       const roll = Math.random();
       if (roll < 0.08) {
         emoji = '🍌⭐';
         color = '#ffea00'; // Frenzy Banana
         special = 'frenzy';
-      } else if (roll < 0.16) {
+      } else if (roll < 0.11) {
+        // Nerf: freeze spawn 8% -> 3% (so band width is 0.08..0.11)
         emoji = '🥥❄️';
         color = '#00d2ff'; // Freeze Coconut
         special = 'freeze';
@@ -307,7 +376,7 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
         frenzyTimerRef.current = 180; // 3 seconds frenzy
         confetti({ particleCount: 30, spread: 40, colors: ['#ffea00'] });
       } else if (f.special === 'freeze') {
-        freezeTimerRef.current = 180; // 3 seconds freeze
+        freezeTimerRef.current = 90; // Nerf: 1.5 seconds freeze (was 3s)
       }
 
       // Splatter particles
@@ -350,19 +419,58 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
   };
 
   const handleGameOver = async () => {
+    // Stop the loop immediately
+    if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
+
+    // If classic mode + haven't continued yet -> show ContinueModal first
+    const mode = gameModeRef.current;
+    if (mode === 'classic' && !hasContinued) {
+      // Pause loop but don't mark gameOver yet
+      isStartedRef.current = false;
+      setShowContinueModal(true);
+      return;
+    }
+
+    finalizeGameOver();
+  };
+
+  const finalizeGameOver = async () => {
     gameOverRef.current = true;
     setGameOver(true);
     setIsStarted(false);
-    
+    setShowContinueModal(false);
+
     if (timerIntervalRef.current) {
       clearInterval(timerIntervalRef.current);
       timerIntervalRef.current = null;
     }
     if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
 
-    const coins = await CoinService.reportGameScore('ninja_fruit', { won: false, score: scoreRef.current, mode: gameMode ?? 'classic' });
+    const coins = await CoinService.reportGameScore('ninja_fruit', { won: false, score: scoreRef.current, mode: gameModeRef.current ?? 'classic' });
     setEarnedCoins(coins);
     await CoinService.recordGamePlayed('Ninja Fruit');
+  };
+
+  const handleContinueAccepted = () => {
+    // Modal already deducted the coins; resume game with 3 lives
+    setHasContinued(true);
+    setShowContinueModal(false);
+    livesRef.current = 3;
+    setLives(3);
+    gameOverRef.current = false;
+    isStartedRef.current = true;
+    setIsStarted(true);
+    // Clear remaining bombs/fruits to give a clean break
+    fruitsRef.current = [];
+    particlesRef.current = [];
+    swipePointsRef.current = [];
+    if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
+    frameIdRef.current = requestAnimationFrame(gameLoop);
+  };
+
+  const handleContinueDeclined = () => {
+    setShowContinueModal(false);
+    finalizeGameOver();
   };
 
   const draw = () => {
@@ -520,11 +628,28 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
 
   useEffect(() => {
     initGame();
+    const unsub = CoinService.subscribe((d) => setCoinBalance(d.balance));
     return () => {
       if (frameIdRef.current) cancelAnimationFrame(frameIdRef.current);
       if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+      unsub();
     };
   }, []);
+
+  // Shop handlers (pre-game powerup purchase)
+  const buyFreezePregame = async () => {
+    if (shopFreezeBought) return;
+    if (coinBalance < FREEZE_BUY_COST) return;
+    const ok = await CoinService.spendCoins(FREEZE_BUY_COST);
+    if (ok) setShopFreezeBought(true);
+  };
+
+  const buyFrenzyPregame = async () => {
+    if (shopFrenzyBought) return;
+    if (coinBalance < FRENZY_BUY_COST) return;
+    const ok = await CoinService.spendCoins(FRENZY_BUY_COST);
+    if (ok) setShopFrenzyBought(true);
+  };
 
   return (
     <div className="glass fullscreen-game-container">
@@ -579,24 +704,80 @@ export const NinjaFruit: React.FC<NinjaFruitProps> = ({ onClose }) => {
         />
 
         {/* Start Game Mode Selection Overlay */}
-        {!isStarted && !gameOver && (
-          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: 'rgba(10,8,20,0.85)', borderRadius: '12px' }}>
-            <span style={{ fontSize: '3.5rem', marginBottom: '14px' }}>🍓🍉⚔️</span>
-            <h3 style={{ color: 'white', fontSize: '1.4rem', fontWeight: 800, marginBottom: '16px' }}>Chọn chế độ chém quả:</h3>
-            
-            <div style={{ display: 'flex', gap: '14px' }}>
-              <button onClick={() => chooseModeAndStart('classic')} className="btn btn-primary" style={{ display: 'flex', flexDirection: 'column', padding: '12px 20px', height: 'auto', gap: '4px' }}>
+        {!isStarted && !gameOver && !showContinueModal && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', zIndex: 10, background: 'rgba(10,8,20,0.85)', borderRadius: '12px', padding: '16px' }}>
+            <span style={{ fontSize: '3rem', marginBottom: '10px' }}>🍓🍉⚔️</span>
+            <h3 style={{ color: 'white', fontSize: '1.3rem', fontWeight: 800, marginBottom: '12px' }}>Chọn chế độ chém quả:</h3>
+
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '14px' }}>
+              <button onClick={() => chooseModeAndStart('classic')} className="btn btn-primary" style={{ display: 'flex', flexDirection: 'column', padding: '10px 18px', height: 'auto', gap: '4px' }}>
                 <span style={{ fontWeight: 800 }}>⚔️ Classic Mode</span>
                 <span style={{ fontSize: '0.65rem', opacity: 0.85 }}>Có bom - Mất 3 mạng là chết</span>
               </button>
-              
-              <button onClick={() => chooseModeAndStart('zen')} className="btn btn-secondary" style={{ display: 'flex', flexDirection: 'column', padding: '12px 20px', height: 'auto', gap: '4px', background: 'rgba(124, 111, 255, 0.25)', borderColor: 'var(--primary-color)' }}>
+
+              <button onClick={() => chooseModeAndStart('zen')} className="btn btn-secondary" style={{ display: 'flex', flexDirection: 'column', padding: '10px 18px', height: 'auto', gap: '4px', background: 'rgba(124, 111, 255, 0.25)', borderColor: 'var(--primary-color)' }}>
                 <span style={{ fontWeight: 800, color: 'white' }}>⏳ Zen Mode</span>
                 <span style={{ fontSize: '0.65rem', opacity: 0.85 }}>30s Đếm ngược - Không có bom</span>
               </button>
             </div>
+
+            {/* Pre-game Shop */}
+            <div style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(241,196,15,0.25)', borderRadius: '12px', padding: '10px 14px', marginTop: '4px', maxWidth: '380px', width: '100%' }}>
+              <div style={{ fontSize: '0.7rem', color: 'rgba(255,255,255,0.6)', textAlign: 'center', fontWeight: 700, letterSpacing: 1, marginBottom: '8px' }}>
+                CỬA HÀNG NHANH · Số dư 🪙 {coinBalance}
+              </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={buyFreezePregame}
+                  disabled={shopFreezeBought || coinBalance < FREEZE_BUY_COST}
+                  style={{
+                    background: shopFreezeBought ? 'rgba(0, 210, 255, 0.25)' : 'rgba(0, 210, 255, 0.12)',
+                    border: '1px solid rgba(0, 210, 255, 0.5)',
+                    color: shopFreezeBought ? '#00d2ff' : 'white',
+                    borderRadius: '8px',
+                    padding: '6px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: shopFreezeBought || coinBalance < FREEZE_BUY_COST ? 'not-allowed' : 'pointer',
+                    opacity: !shopFreezeBought && coinBalance < FREEZE_BUY_COST ? 0.5 : 1,
+                  }}
+                  title="Đảm bảo có 1 quả Băng giá ❄️ trong 5 giây đầu"
+                >
+                  {shopFreezeBought ? '✓ Đã mua Freeze' : `❄️ Mua Freeze (${FREEZE_BUY_COST} xu)`}
+                </button>
+
+                <button
+                  onClick={buyFrenzyPregame}
+                  disabled={shopFrenzyBought || coinBalance < FRENZY_BUY_COST}
+                  style={{
+                    background: shopFrenzyBought ? 'rgba(255, 234, 0, 0.25)' : 'rgba(255, 234, 0, 0.12)',
+                    border: '1px solid rgba(255, 234, 0, 0.5)',
+                    color: shopFrenzyBought ? '#ffea00' : 'white',
+                    borderRadius: '8px',
+                    padding: '6px 12px',
+                    fontSize: '0.78rem',
+                    fontWeight: 700,
+                    cursor: shopFrenzyBought || coinBalance < FRENZY_BUY_COST ? 'not-allowed' : 'pointer',
+                    opacity: !shopFrenzyBought && coinBalance < FRENZY_BUY_COST ? 0.5 : 1,
+                  }}
+                  title="Đảm bảo có 1 quả Frenzy ⚡ trong 5 giây đầu"
+                >
+                  {shopFrenzyBought ? '✓ Đã mua Frenzy' : `⚡ Mua Frenzy (${FRENZY_BUY_COST} xu)`}
+                </button>
+              </div>
+            </div>
           </div>
         )}
+
+        {/* Continue Modal */}
+        <ContinueModal
+          isOpen={showContinueModal}
+          cost={CONTINUE_COST}
+          title="HẾT MẠNG"
+          subtitle="Hồi 3 mạng và chơi tiếp?"
+          onContinue={handleContinueAccepted}
+          onSkip={handleContinueDeclined}
+        />
 
         {/* Game Over Screen Overlay */}
         {gameOver && (
