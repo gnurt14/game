@@ -13,6 +13,8 @@ import { DailyRewardModal } from './components/DailyRewardModal';
 import { LuckyWheelModal } from './components/LuckyWheelModal';
 import { WelcomeBackModal } from './components/WelcomeBackModal';
 import { ForceUpdateModal } from './components/ForceUpdateModal';
+import { UpdateRewardModal } from './components/UpdateRewardModal';
+import { UpdateRewardService } from './services/updateRewardService';
 
 // Services
 import { AuthService, PlayerModel } from './services/authService';
@@ -61,6 +63,7 @@ export const App: React.FC = () => {
   const [isDailyOpen, setIsDailyOpen] = useState(false);
   const [isWheelOpen, setIsWheelOpen] = useState(false);
   const [isWelcomeBackOpen, setIsWelcomeBackOpen] = useState(false);
+  const [isUpdateRewardOpen, setIsUpdateRewardOpen] = useState(false);
 
   // Check auth session on startup
   useEffect(() => {
@@ -108,6 +111,16 @@ export const App: React.FC = () => {
       if (StreakService.shouldShowWelcomeBack()) {
         // Delay nhẹ để không xung đột với DailyReward modal.
         setTimeout(() => setIsWelcomeBackOpen(true), 2800);
+      }
+    }
+  }, [player, initializing]);
+
+  // Trigger Update Reward modal nếu user vừa cập nhật lên BUILD_VERSION mới.
+  useEffect(() => {
+    if (player && !initializing) {
+      if (UpdateRewardService.isEligible()) {
+        // Delay đủ để các modal khác đã mở/đóng trước đó.
+        setTimeout(() => setIsUpdateRewardOpen(true), 4200);
       }
     }
   }, [player, initializing]);
@@ -278,6 +291,10 @@ export const App: React.FC = () => {
       <WelcomeBackModal
         isOpen={isWelcomeBackOpen}
         onClose={() => setIsWelcomeBackOpen(false)}
+      />
+      <UpdateRewardModal
+        isOpen={isUpdateRewardOpen}
+        onClose={() => setIsUpdateRewardOpen(false)}
       />
 
       {/* Choice Modal for Lucky Games (Offline vs Multiplayer) */}
