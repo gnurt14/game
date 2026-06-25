@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { CoinService } from '../../services/coinService';
 import confetti from 'canvas-confetti';
+import { CustomBetButton } from '../../components/CustomBetButton';
 
 interface PlinkoProps {
   onClose: () => void;
@@ -453,6 +454,12 @@ export const Plinko: React.FC<PlinkoProps> = ({ onClose }) => {
               {v}
             </button>
           ))}
+          <CustomBetButton
+            balance={balance}
+            value={bet}
+            onChange={setBet}
+            presetValues={[10, 50, 100, 500]}
+          />
           <button
             onClick={dropBall}
             disabled={bet > balance}

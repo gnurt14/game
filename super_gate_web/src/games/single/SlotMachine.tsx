@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Play } from 'lucide-react';
 import { CoinService } from '../../services/coinService';
 import confetti from 'canvas-confetti';
+import { CustomBetButton } from '../../components/CustomBetButton';
 
 interface SlotMachineProps {
   onClose: () => void;
@@ -48,7 +49,8 @@ export const SlotMachine: React.FC<SlotMachineProps> = ({ onClose }) => {
     return unsub;
   }, []);
 
-  const clampBet = (v: number) => Math.max(10, Math.min(1000, Math.floor(v) || 10));
+  const clampBet = (v: number) =>
+    Math.max(1, Math.min(Math.max(balance, 1), Math.floor(v) || 1));
 
   const computePayout = (result: number[], betAmount: number): { win: number; label: string; jackpot: boolean } => {
     const [a, b, c] = result;
@@ -290,8 +292,15 @@ export const SlotMachine: React.FC<SlotMachineProps> = ({ onClose }) => {
               onChange={(e) => setBet(clampBet(parseInt(e.target.value)))}
               disabled={spinning}
               style={{ width: '90px', height: '36px', borderRadius: '8px', textAlign: 'center', fontWeight: 700 }}
-              min={10}
-              max={1000}
+              min={1}
+              max={Math.max(balance, 1)}
+            />
+            <CustomBetButton
+              balance={balance}
+              value={bet}
+              onChange={(v) => setBet(clampBet(v))}
+              disabled={spinning}
+              presetValues={[10, 50, 100, 500, 1000]}
             />
           </div>
 

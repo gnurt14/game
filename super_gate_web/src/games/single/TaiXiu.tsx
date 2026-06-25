@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CoinService } from '../../services/coinService';
 import confetti from 'canvas-confetti';
+import { CustomBetButton } from '../../components/CustomBetButton';
 
 interface TaiXiuProps {
   onClose: () => void;
@@ -314,6 +315,14 @@ export const TaiXiu: React.FC<TaiXiuProps> = ({ onClose }) => {
                 {v}
               </button>
             ))}
+            <CustomBetButton
+              balance={balance}
+              value={chip}
+              onChange={setChip}
+              disabled={rolling}
+              presetValues={[10, 50, 100, 500]}
+              size="chip"
+            />
           </div>
           <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
             <button onClick={clearAll} disabled={rolling || totalBet === 0} className="btn btn-secondary" style={{ flex: 1 }}>

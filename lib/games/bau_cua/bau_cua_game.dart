@@ -13,6 +13,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../coin/coin_service.dart';
+import '../shared/custom_bet_sheet.dart';
 
 // =============================================================================
 // CONSTANTS
@@ -127,6 +128,19 @@ class _BauCuaScreenState extends State<BauCuaScreen>
     if (_phase != _Phase.idle) return;
     if (amount > _coinData.balance) return;
     setState(() => _betAmount = amount);
+  }
+
+  Future<void> _openCustomBet() async {
+    if (_phase != _Phase.idle) return;
+    final bal = _coinData.balance;
+    if (bal <= 0) return;
+    final picked = await showCustomBetSheet(
+      context,
+      balance: bal,
+      initial: _betAmount,
+    );
+    if (!mounted || picked == null) return;
+    setState(() => _betAmount = picked);
   }
 
   Future<void> _roll() async {
@@ -550,45 +564,99 @@ class _BauCuaScreenState extends State<BauCuaScreen>
         Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _chips.map((amt) {
-            final isSel = _betAmount == amt;
-            final canAfford = amt <= _coinData.balance;
-            final canTap = _phase == _Phase.idle && canAfford;
+          children: [
+            ..._chips.map((amt) {
+              final isSel = _betAmount == amt;
+              final canAfford = amt <= _coinData.balance;
+              final canTap = _phase == _Phase.idle && canAfford;
 
-            return GestureDetector(
-              onTap: canTap ? () => _pickChip(amt) : null,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isSel
-                      ? const Color(0xFF1E1A00)
-                      : const Color(0xFF10101E),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
+              return GestureDetector(
+                onTap: canTap ? () => _pickChip(amt) : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
                     color: isSel
-                        ? const Color(0xFFFFD700)
-                        : (canAfford
-                            ? const Color(0xFF2A2A40)
-                            : const Color(0xFF18182A)),
-                    width: isSel ? 2 : 1.5,
+                        ? const Color(0xFF1E1A00)
+                        : const Color(0xFF10101E),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSel
+                          ? const Color(0xFFFFD700)
+                          : (canAfford
+                              ? const Color(0xFF2A2A40)
+                              : const Color(0xFF18182A)),
+                      width: isSel ? 2 : 1.5,
+                    ),
+                  ),
+                  child: Text(
+                    '$amt🪙',
+                    style: TextStyle(
+                      color: isSel
+                          ? const Color(0xFFFFD700)
+                          : (canAfford ? Colors.white60 : Colors.white24),
+                      fontWeight:
+                          isSel ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 13,
+                    ),
                   ),
                 ),
-                child: Text(
-                  '$amt🪙',
-                  style: TextStyle(
-                    color: isSel
-                        ? const Color(0xFFFFD700)
-                        : (canAfford ? Colors.white60 : Colors.white24),
-                    fontWeight:
-                        isSel ? FontWeight.bold : FontWeight.normal,
-                    fontSize: 13,
+              );
+            }),
+            // Custom bet chip
+            () {
+              final canAfford = _coinData.balance > 0;
+              final canTap = _phase == _Phase.idle && canAfford;
+              final isCustom = _betAmount > 0 && !_chips.contains(_betAmount);
+              return GestureDetector(
+                onTap: canTap ? _openCustomBet : null,
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isCustom
+                        ? const Color(0xFF1E1A00)
+                        : const Color(0xFF10101E),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isCustom
+                          ? const Color(0xFFFFD700)
+                          : (canAfford
+                              ? const Color(0xFF2A2A40)
+                              : const Color(0xFF18182A)),
+                      width: isCustom ? 2 : 1.5,
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.tune_rounded,
+                        size: 14,
+                        color: isCustom
+                            ? const Color(0xFFFFD700)
+                            : (canAfford ? Colors.white60 : Colors.white24),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        isCustom ? '$_betAmount🪙' : 'Tuỳ chỉnh',
+                        style: TextStyle(
+                          color: isCustom
+                              ? const Color(0xFFFFD700)
+                              : (canAfford ? Colors.white60 : Colors.white24),
+                          fontWeight:
+                              isCustom ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            );
-          }).toList(),
+              );
+            }(),
+          ],
         ),
       ],
     );

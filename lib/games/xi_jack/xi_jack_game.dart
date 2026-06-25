@@ -10,6 +10,7 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import '../../coin/coin_service.dart';
+import '../shared/custom_bet_sheet.dart';
 
 // =============================================================================
 // DATA MODEL
@@ -336,12 +337,14 @@ class _XiJackScreenState extends State<XiJackScreen>
       _ctrl.phase = GamePhase.betting;
       _ctrl.result = GameResult.none;
       _pendingPayout = false;
-      // Clamp bet nếu balance giảm
+      // Clamp bet nếu balance giảm — chỉ rơi về preset khi cược hiện tại vượt số dư
       if (_betAmount > _balance) {
-        _betAmount = _betOptions.lastWhere(
-          (b) => b <= _balance,
-          orElse: () => _betOptions.first,
-        );
+        _betAmount = _balance > 0
+            ? _betOptions.lastWhere(
+                (b) => b <= _balance,
+                orElse: () => _balance,
+              )
+            : _betOptions.first;
       }
     });
   }
@@ -485,11 +488,14 @@ class _XiJackScreenState extends State<XiJackScreen>
             spacing: 12,
             runSpacing: 12,
             alignment: WrapAlignment.center,
-            children: _betOptions.map((b) {
-              final selected = _betAmount == b;
-              final canAfford = b <= _balance;
-              return _buildChip(b, selected: selected, enabled: canAfford);
-            }).toList(),
+            children: [
+              ..._betOptions.map((b) {
+                final selected = _betAmount == b;
+                final canAfford = b <= _balance;
+                return _buildChip(b, selected: selected, enabled: canAfford);
+              }),
+              _buildCustomChip(),
+            ],
           ),
           const SizedBox(height: 36),
           // Deal button
@@ -536,6 +542,79 @@ class _XiJackScreenState extends State<XiJackScreen>
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Future<void> _openCustomBet() async {
+    if (_balance <= 0) return;
+    final picked = await showCustomBetSheet(
+      context,
+      balance: _balance,
+      initial: _betAmount,
+    );
+    if (!mounted || picked == null) return;
+    setState(() => _betAmount = picked);
+  }
+
+  Widget _buildCustomChip() {
+    final isCustom = _betAmount > 0 && !_betOptions.contains(_betAmount);
+    final enabled = _balance > 0 && _ctrl.phase == GamePhase.betting;
+    return GestureDetector(
+      onTap: enabled ? _openCustomBet : null,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: 68,
+        height: 68,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: isCustom
+              ? const LinearGradient(
+                  colors: [Color(0xFFFFD700), Color(0xFFE68900)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: isCustom
+              ? null
+              : enabled
+                  ? const Color(0xFF1A4A2A)
+                  : const Color(0xFF0F0F0F),
+          border: Border.all(
+            color: isCustom
+                ? const Color(0xFFFFD700)
+                : enabled
+                    ? const Color(0xFF2E6A3E)
+                    : const Color(0xFF1A1A1A),
+            width: 2.5,
+          ),
+          boxShadow: isCustom
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFFFFD700).withOpacity(0.5),
+                    blurRadius: 14,
+                  )
+                ]
+              : null,
+        ),
+        child: Center(
+          child: isCustom
+              ? Text(
+                  _betAmount >= 1000
+                      ? '${(_betAmount / 1000).toStringAsFixed(_betAmount % 1000 == 0 ? 0 : 1)}K'
+                      : '$_betAmount',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
+                )
+              : Icon(
+                  Icons.tune_rounded,
+                  size: 26,
+                  color: enabled ? Colors.white : Colors.white24,
+                ),
+        ),
       ),
     );
   }

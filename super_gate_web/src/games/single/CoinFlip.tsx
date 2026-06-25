@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CoinService } from '../../services/coinService';
 import confetti from 'canvas-confetti';
+import { CustomBetButton } from '../../components/CustomBetButton';
 
 interface CoinFlipProps {
   onClose: () => void;
@@ -211,6 +212,13 @@ export const CoinFlip: React.FC<CoinFlipProps> = ({ onClose }) => {
                 {v}
               </button>
             ))}
+            <CustomBetButton
+              balance={balance}
+              value={bet}
+              onChange={setBet}
+              disabled={flipping}
+              presetValues={[10, 50, 100, 500, 1000]}
+            />
           </div>
 
           <button

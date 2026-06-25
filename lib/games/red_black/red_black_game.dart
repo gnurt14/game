@@ -11,6 +11,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../coin/coin_service.dart';
+import '../shared/custom_bet_sheet.dart';
 
 // ═══════════════════════════════════════════════════════════════
 // Models
@@ -116,6 +117,18 @@ class _RedBlackScreenState extends State<RedBlackScreen>
 
   // ── Helpers ──────────────────────────────────────────────────
   int get _coins => CoinService.instance.notifier.value.balance;
+
+  Future<void> _openCustomBet() async {
+    if (_phase != _Phase.idle) return;
+    if (_coins <= 0) return;
+    final picked = await showCustomBetSheet(
+      context,
+      balance: _coins,
+      initial: _betAmount,
+    );
+    if (!mounted || picked == null) return;
+    setState(() => _betAmount = picked);
+  }
 
   _Card _draw() {
     final suit = _suits[_rng.nextInt(4)];
@@ -684,12 +697,39 @@ class _RedBlackScreenState extends State<RedBlackScreen>
   }
 
   Widget _buildChipRow() {
+    final isCustom = _betAmount > 0 &&
+        !_chips.contains(_betAmount) &&
+        _betAmount != _coins;
     return Wrap(
       spacing: 8, runSpacing: 8,
       alignment: WrapAlignment.center,
       children: [
         for (int i = 0; i < _chips.length; i++)
           _buildChip(_chips[i], _chipColors[i]),
+        // Custom bet pill
+        GestureDetector(
+          onTap: _coins > 0 ? _openCustomBet : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: 44, height: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              color: isCustom
+                  ? const Color(0xFFFFD700).withOpacity(0.22)
+                  : Colors.white.withOpacity(0.05),
+              border: Border.all(
+                color: const Color(0xFFFFD700).withOpacity(isCustom ? 1 : 0.5),
+                width: isCustom ? 2 : 1.5,
+              ),
+            ),
+            child: Icon(
+              Icons.tune_rounded,
+              size: 18,
+              color: isCustom ? const Color(0xFFFFD700) : Colors.amber,
+            ),
+          ),
+        ),
         // All-in pill
         GestureDetector(
           onTap: _coins > 0 ? () => setState(() => _betAmount = _coins) : null,
